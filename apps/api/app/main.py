@@ -13,13 +13,20 @@ from .schemas import (
     HistoryResponse,
     IngestionStatusOut,
     ObservationOut,
+    ScoreComparisonOut,
     ScoreOut,
     StationDetail,
     StationSummary,
     WeatherOut,
 )
-from .scoring import ScoreResult
-from .service import hydro_for_station, ingestion_overview, last_ingest, score_station
+from .scoring import CANDIDATE_RULES_VERSION, RULES_VERSION, ScoreResult
+from .service import (
+    candidate_score_station,
+    hydro_for_station,
+    ingestion_overview,
+    last_ingest,
+    score_station,
+)
 
 app = FastAPI(
     title="Riverwise API",
@@ -35,7 +42,9 @@ app.add_middleware(
 )
 
 
-def _score_out(result: ScoreResult | None) -> ScoreOut:
+def _score_out(
+    result: ScoreResult | None, empty_rules_version: str = RULES_VERSION
+) -> ScoreOut:
     if result is None:
         return ScoreOut(
             value=None,
@@ -43,7 +52,7 @@ def _score_out(result: ScoreResult | None) -> ScoreOut:
             confidence="unavailable",
             earned_points=0,
             available_points=0,
-            rules_version="v1.0.0",
+            rules_version=empty_rules_version,
             reasons=["No discharge observations are available."],
             components=[],
         )
@@ -125,6 +134,39 @@ def ingestion_status(session: Session = Depends(get_db)) -> IngestionStatusOut:
     )
 
 
+@app.get("/api/v1/scores/compare", response_model=list[ScoreComparisonOut])
+def compare_scores(session: Session = Depends(get_db)) -> list[ScoreComparisonOut]:
+    now = datetime.now(UTC)
+    stations = list(
+        session.scalars(select(Station).order_by(Station.display_order, Station.name)).all()
+    )
+    rows = []
+    for station in stations:
+        current, base_context = score_station(session, station.id, now)
+        candidate, context = candidate_score_station(
+            session, station.id, now, base_context
+        )
+        latest = context.get("latest")
+        temperature = context.get("latest_water_temperature")
+        rows.append(
+            ScoreComparisonOut(
+                station_id=station.id,
+                station_name=station.name,
+                current_score=_score_out(current),
+                candidate_score=_score_out(candidate, CANDIDATE_RULES_VERSION),
+                latest_flow=ObservationOut.model_validate(latest) if latest else None,
+                latest_water_temperature=(
+                    ObservationOut.model_validate(temperature) if temperature else None
+                ),
+                seasonal_flow_percentile=context.get("seasonal_flow_percentile"),
+                seasonal_median_m3s=context.get("seasonal_median_m3s"),
+                seasonal_sample_count=context.get("seasonal_sample_count", 0),
+                seasonal_year_count=context.get("seasonal_year_count", 0),
+            )
+        )
+    return rows
+
+
 @app.get("/api/v1/stations/{station_id}", response_model=StationDetail)
 def station_detail(station_id: str, session: Session = Depends(get_db)) -> StationDetail:
     station = session.get(Station, station_id)
@@ -132,7 +174,9 @@ def station_detail(station_id: str, session: Session = Depends(get_db)) -> Stati
         raise HTTPException(status_code=404, detail="Station not found")
     now = datetime.now(UTC)
     result, context = score_station(session, station.id, now)
+    candidate, context = candidate_score_station(session, station.id, now, context)
     latest = context.get("latest")
+    temperature = context.get("latest_water_temperature")
     weather = context.get("current_weather")
     return StationDetail(
         id=station.id,
@@ -143,9 +187,17 @@ def station_detail(station_id: str, session: Session = Depends(get_db)) -> Stati
         source_url=station.source_url,
         latest_flow=ObservationOut.model_validate(latest) if latest else None,
         score=_score_out(result),
+        candidate_score=_score_out(candidate, CANDIDATE_RULES_VERSION),
         baseline_median_m3s=context.get("baseline_median"),
+        seasonal_median_m3s=context.get("seasonal_median_m3s"),
+        seasonal_flow_percentile=context.get("seasonal_flow_percentile"),
+        seasonal_sample_count=context.get("seasonal_sample_count", 0),
+        seasonal_year_count=context.get("seasonal_year_count", 0),
         six_hour_change_pct=context.get("six_hour_change_pct"),
         precipitation_12h_mm=context.get("precipitation_12h_mm"),
+        latest_water_temperature=(
+            ObservationOut.model_validate(temperature) if temperature else None
+        ),
         current_weather=WeatherOut.model_validate(weather) if weather else None,
     )
 

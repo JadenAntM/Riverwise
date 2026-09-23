@@ -16,3 +16,10 @@ export function formatNumber(value: number | null, suffix = "", digits = 1): str
 export function sentenceCase(value: string): string {
   return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
+
+export function formatStationName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\b(At|Near|Above)\b/g, (word) => word.toLowerCase());
+}

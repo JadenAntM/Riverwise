@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.ingestion import parse_wsc_csv, upsert_hydro
+from app.ingestion import parse_wsc_csv, parse_wsc_daily_csv, upsert_hydro
 from app.models import HydroObservation
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -30,6 +30,27 @@ def test_parser_normalizes_live_header_whitespace() -> None:
     rows = parse_wsc_csv(content, {"01FB001"})
     assert len(rows) == 1
     assert rows[0].value == 8.01
+
+
+def test_parser_supports_optional_water_temperature() -> None:
+    content = (
+        ROOT / "tests" / "fixtures" / "wsc_01FB001_temperature_sample.csv"
+    ).read_text()
+    rows = parse_wsc_csv(content, {"01FB001"})
+    assert rows[-1].parameter == "water_temperature"
+    assert rows[-1].value == 11.15
+    assert rows[-1].unit == "°C"
+
+
+def test_daily_parser_preserves_historical_symbol() -> None:
+    content = (
+        ROOT / "tests" / "fixtures" / "wsc_01FB001_daily_sample.csv"
+    ).read_text()
+    rows = parse_wsc_daily_csv(content, {"01FB001"})
+    estimated = next(row for row in rows if row.observed_at_utc.date().isoformat() == "2022-09-24")
+    assert estimated.parameter == "daily_discharge"
+    assert estimated.value == 196
+    assert estimated.qualifier == "E"
 
 
 def test_additional_verified_station_fixture() -> None:
@@ -63,7 +84,11 @@ def test_upsert_is_idempotent_and_applies_revision(session: Session) -> None:
     ingested_at = datetime(2026, 9, 23, 16, 30, tzinfo=UTC)
     upsert_hydro(session, parse_wsc_csv(first, {"01FB001"}), ingested_at)
     upsert_hydro(session, parse_wsc_csv(revised, {"01FB001"}), ingested_at)
-    count = session.scalar(select(func.count()).select_from(HydroObservation))
+    count = session.scalar(
+        select(func.count())
+        .select_from(HydroObservation)
+        .where(HydroObservation.parameter == "discharge")
+    )
     observation = session.scalar(
         select(HydroObservation).where(
             HydroObservation.observed_at_utc == datetime(2026, 9, 23, 16)

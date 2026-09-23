@@ -4,16 +4,7 @@ import Link from "next/link";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 
 import type { StationSummary } from "@/lib/api";
-
-
-function displayName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
-    .replace("At", "at")
-    .replace("Near", "near")
-    .replace("Above", "above");
-}
+import { formatStationName } from "@/lib/format";
 
 
 export function StationMap({ stations }: { stations: StationSummary[] }) {
@@ -53,7 +44,7 @@ export function StationMap({ stations }: { stations: StationSummary[] }) {
               }}
             >
               <Popup>
-                <strong>{displayName(station.name)}</strong><br />
+                <strong>{formatStationName(station.name)}</strong><br />
                 WSC {station.id}<br />
                 <Link href={`/stations/${station.id}`}>Open station details</Link>
               </Popup>
@@ -65,7 +56,7 @@ export function StationMap({ stations }: { stations: StationSummary[] }) {
         {stations.map((station) => (
           <li key={station.id}>
             <span className={station.latest_flow ? "map-dot active" : "map-dot"} aria-hidden="true" />
-            <Link href={`/stations/${station.id}`}>{station.id} · {displayName(station.name)}</Link>
+            <Link href={`/stations/${station.id}`}>{station.id} · {formatStationName(station.name)}</Link>
           </li>
         ))}
       </ul>

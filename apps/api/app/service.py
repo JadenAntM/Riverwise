@@ -5,7 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import HydroObservation, IngestRun, Station, WeatherHour
-from .scoring import ScoreInput, ScoreResult, calculate_score
+from .scoring import (
+    CandidateScoreInput,
+    ScoreInput,
+    ScoreResult,
+    calculate_candidate_score,
+    calculate_score,
+)
 
 
 def _aware(value: datetime) -> datetime:
@@ -95,6 +101,104 @@ def score_station(
         "latest": latest,
         "current_weather": cloud_row,
         "precipitation_12h_mm": precip,
+    }
+
+
+def _seasonal_flow_context(
+    session: Session, station_id: str, target_time: datetime, latest_flow: float
+) -> dict:
+    daily = list(
+        session.scalars(
+            select(HydroObservation)
+            .where(
+                HydroObservation.station_id == station_id,
+                HydroObservation.parameter == "daily_discharge",
+            )
+            .order_by(HydroObservation.observed_at_utc)
+        ).all()
+    )
+    target = datetime(2000, target_time.month, target_time.day, tzinfo=UTC)
+    seasonal = []
+    years: set[int] = set()
+    for observation in daily:
+        observed_at = _aware(observation.observed_at_utc)
+        if observed_at.year >= target_time.year:
+            continue
+        candidate = datetime(2000, observed_at.month, observed_at.day, tzinfo=UTC)
+        difference = abs((candidate - target).days)
+        if min(difference, 366 - difference) <= 7:
+            seasonal.append(observation.value)
+            years.add(observed_at.year)
+
+    if len(seasonal) < 21 or len(years) < 3:
+        return {
+            "seasonal_flow_percentile": None,
+            "seasonal_median_m3s": None,
+            "seasonal_sample_count": len(seasonal),
+            "seasonal_year_count": len(years),
+        }
+
+    below = sum(value < latest_flow for value in seasonal)
+    equal = sum(value == latest_flow for value in seasonal)
+    return {
+        "seasonal_flow_percentile": (below + 0.5 * equal) / len(seasonal) * 100,
+        "seasonal_median_m3s": median(seasonal),
+        "seasonal_sample_count": len(seasonal),
+        "seasonal_year_count": len(years),
+    }
+
+
+def candidate_score_station(
+    session: Session,
+    station_id: str,
+    evaluation_time: datetime,
+    base_context: dict | None = None,
+) -> tuple[ScoreResult | None, dict]:
+    if base_context is None:
+        _, base_context = score_station(session, station_id, evaluation_time)
+    latest = base_context.get("latest")
+    if latest is None:
+        return None, {
+            **base_context,
+            "latest_water_temperature": None,
+            "seasonal_flow_percentile": None,
+            "seasonal_median_m3s": None,
+            "seasonal_sample_count": 0,
+            "seasonal_year_count": 0,
+        }
+
+    temperature = session.scalar(
+        select(HydroObservation)
+        .where(
+            HydroObservation.station_id == station_id,
+            HydroObservation.parameter == "water_temperature",
+            HydroObservation.observed_at_utc <= evaluation_time,
+        )
+        .order_by(HydroObservation.observed_at_utc.desc())
+        .limit(1)
+    )
+    seasonal = _seasonal_flow_context(
+        session,
+        station_id,
+        _aware(latest.observed_at_utc),
+        latest.value,
+    )
+    result = calculate_candidate_score(
+        CandidateScoreInput(
+            evaluation_time=evaluation_time,
+            latest_observed_at=_aware(latest.observed_at_utc),
+            seasonal_flow_percentile=seasonal["seasonal_flow_percentile"],
+            six_hour_change_pct=base_context.get("six_hour_change_pct"),
+            water_temperature_c=temperature.value if temperature else None,
+            water_temperature_observed_at=(
+                _aware(temperature.observed_at_utc) if temperature else None
+            ),
+        )
+    )
+    return result, {
+        **base_context,
+        **seasonal,
+        "latest_water_temperature": temperature,
     }
 
 

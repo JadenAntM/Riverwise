@@ -8,11 +8,11 @@ The canonical product and implementation plan is [`PROJECT_SPEC.md`](./PROJECT_S
 
 ## Current status
 
-The three-station reliability milestone is complete for verified WSC stations `01FB001`, `01FB003`, and `01FC002`. The project includes migrations, fixture and live ingestion paths, idempotent updates, scoring, read APIs, a responsive station index/detail interface, a discharge chart, an accessible station map with a text equivalent, source/station ingestion monitoring, tests, Docker Compose, CI, and documentation.
+The three-station reliability milestone is complete for verified WSC stations `01FB001`, `01FB003`, and `01FC002`. The project includes migrations, fixture and live ingestion paths, idempotent updates, scoring, read APIs, a responsive station index/detail interface, a discharge chart, an accessible station map with a text equivalent, source/station ingestion monitoring, tests, Docker Compose, CI, and documentation. A post-MVP experiment also ingests season-matched daily discharge history and measured water temperature where WSC reports it, then compares `v1.0.0` with a non-production `v1.1.0-shadow` score in the Score Lab.
 
 The Docker `scheduler` imports live WSC and Open-Meteo data immediately on startup and then hourly at 10 minutes past the hour. `/api/v1/ingestion` and `/status` expose the latest per-station source runs and observation freshness. The latest verified live cycle on 2026-09-23 completed both sources successfully for all three stations.
 
-The next product decision is whether to add device-local favourites without accounts. Alerts remain a later feature because they require choices about identity, notification channel, thresholds, consent, cost, and delivery infrastructure. Do not add accounts, alerts, machine learning, or speculative scoring rules without resolving those product decisions first.
+The next reliability task is to observe the shadow score across live ingestion cycles and document data coverage; do not claim improved accuracy without outcome data. A private trip log was explicitly excluded from this iteration. Device-local favourites are still an available next product decision. Alerts remain later because they require choices about identity, notification channel, thresholds, consent, cost, and delivery infrastructure. Do not add accounts, alerts, machine learning, or further speculative scoring rules without resolving those product decisions first.
 
 ## Non-negotiable product rules
 

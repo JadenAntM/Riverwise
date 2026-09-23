@@ -32,6 +32,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
             </Link>
             <nav className="header-nav" aria-label="Primary navigation">
               <span className="header-tag">Nova Scotia gauge conditions</span>
+              <Link className="status-link" href="/score-lab">Score lab</Link>
               <Link className="status-link" href="/status">Data status</Link>
             </nav>
           </div>

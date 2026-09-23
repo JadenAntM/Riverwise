@@ -18,7 +18,18 @@ WSC_HEADERS = {
     "Qualifier/Qualificatif",
     "Approval/Approbation",
 }
-PARAMETERS = {"47": ("discharge", "m³/s"), "46": ("level", "m")}
+WSC_DAILY_HEADERS = {
+    "ID",
+    "Date",
+    "Parameter/Paramètre",
+    "Value/Valeur",
+    "Symbol/Symbole",
+}
+PARAMETERS = {
+    "47": ("discharge", "m³/s"),
+    "46": ("level", "m"),
+    "5": ("water_temperature", "°C"),
+}
 
 
 @dataclass(frozen=True)
@@ -48,12 +59,16 @@ def parse_wsc_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]
         if parameter_id not in PARAMETERS:
             continue
         value = float(raw["Value/Valeur"])
-        if not math.isfinite(value) or value < 0:
-            raise ValueError("Hydrometric values must be finite and nonnegative")
+        if not math.isfinite(value):
+            raise ValueError("Hydrometric values must be finite")
+        parameter, unit = PARAMETERS[parameter_id]
+        if parameter in {"discharge", "level"} and value < 0:
+            raise ValueError("Water level and discharge must be nonnegative")
+        if parameter == "water_temperature" and not -5 <= value <= 40:
+            raise ValueError("Water temperature is outside the accepted source range")
         observed_at = datetime.fromisoformat(raw["Date"].replace("Z", "+00:00"))
         if observed_at.tzinfo is None:
             raise ValueError("Hydrometric timestamps must include a timezone")
-        parameter, unit = PARAMETERS[parameter_id]
         qualifier = (
             raw.get("Qualifier/Qualificatif", "").strip()
             or raw.get("Qualifiers/Qualificatifs", "").strip()
@@ -72,6 +87,43 @@ def parse_wsc_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]
         )
     if not rows:
         raise ValueError("WSC response contained no usable observations")
+    return rows
+
+
+def parse_wsc_daily_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]:
+    reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")))
+    normalized_headers = {header.strip() for header in reader.fieldnames or []}
+    if not WSC_DAILY_HEADERS.issubset(normalized_headers):
+        raise ValueError("WSC daily response is missing required CSV headers")
+
+    rows: list[HydroRow] = []
+    for source_row in reader:
+        raw = {(key or "").strip(): value for key, value in source_row.items()}
+        station_id = raw["ID"].strip()
+        if station_id not in allowed_station_ids:
+            raise ValueError(f"Unexpected station ID: {station_id}")
+        if raw["Parameter/Paramètre"].strip().lower() not in {
+            "discharge",
+            "discharge/débit",
+        }:
+            continue
+        value = float(raw["Value/Valeur"])
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("Daily discharge must be finite and nonnegative")
+        observed_at = datetime.fromisoformat(raw["Date"]).replace(tzinfo=UTC)
+        rows.append(
+            HydroRow(
+                station_id=station_id,
+                observed_at_utc=observed_at,
+                parameter="daily_discharge",
+                value=value,
+                unit="m³/s",
+                qualifier=raw.get("Symbol/Symbole", "").strip() or None,
+                approval=None,
+            )
+        )
+    if not rows:
+        raise ValueError("WSC daily response contained no usable observations")
     return rows
 
 

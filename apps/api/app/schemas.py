@@ -65,10 +65,29 @@ class StationSummary(BaseModel):
 
 
 class StationDetail(StationSummary):
+    candidate_score: ScoreOut
     baseline_median_m3s: float | None
+    seasonal_median_m3s: float | None
+    seasonal_flow_percentile: float | None
+    seasonal_sample_count: int
+    seasonal_year_count: int
     six_hour_change_pct: float | None
     precipitation_12h_mm: float | None
+    latest_water_temperature: ObservationOut | None
     current_weather: WeatherOut | None
+
+
+class ScoreComparisonOut(BaseModel):
+    station_id: str
+    station_name: str
+    current_score: ScoreOut
+    candidate_score: ScoreOut
+    latest_flow: ObservationOut | None
+    latest_water_temperature: ObservationOut | None
+    seasonal_flow_percentile: float | None
+    seasonal_median_m3s: float | None
+    seasonal_sample_count: int
+    seasonal_year_count: int
 
 
 class HistoryResponse(BaseModel):

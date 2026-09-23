@@ -46,10 +46,29 @@ export type StationSummary = {
 };
 
 export type StationDetail = StationSummary & {
+  candidate_score: Score;
   baseline_median_m3s: number | null;
+  seasonal_median_m3s: number | null;
+  seasonal_flow_percentile: number | null;
+  seasonal_sample_count: number;
+  seasonal_year_count: number;
   six_hour_change_pct: number | null;
   precipitation_12h_mm: number | null;
+  latest_water_temperature: Observation | null;
   current_weather: Weather | null;
+};
+
+export type ScoreComparison = {
+  station_id: string;
+  station_name: string;
+  current_score: Score;
+  candidate_score: Score;
+  latest_flow: Observation | null;
+  latest_water_temperature: Observation | null;
+  seasonal_flow_percentile: number | null;
+  seasonal_median_m3s: number | null;
+  seasonal_sample_count: number;
+  seasonal_year_count: number;
 };
 
 export type History = {
@@ -108,4 +127,8 @@ export function getHistory(id: string): Promise<History> {
 
 export function getIngestionStatus(): Promise<IngestionStatus> {
   return request("/api/v1/ingestion");
+}
+
+export function getScoreComparison(): Promise<ScoreComparison[]> {
+  return request("/api/v1/scores/compare");
 }

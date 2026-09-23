@@ -12,7 +12,7 @@ import {
   type History,
   type StationSummary,
 } from "@/lib/api";
-import { formatAtlantic } from "@/lib/format";
+import { formatAtlantic, formatStationName } from "@/lib/format";
 
 
 const StationMap = dynamic(
@@ -51,11 +51,11 @@ export default function Home() {
             <div className="eyebrow">Nova Scotia hydrometric data</div>
             <h1>River conditions,<br />station by station.</h1>
             <p className="hero-copy">
-              Check measured discharge at the Northeast Margaree gauge, compare it with the station’s
-              recent baseline, and review the weather inputs behind the experimental score.
+              Check measured discharge at three Cape Breton gauges, compare each reading with its
+              station history, and inspect every input behind the experimental score.
             </p>
             <dl className="hero-index" aria-label="Current Riverwise coverage">
-              <div><dt>Coverage</dt><dd>1 verified gauge</dd></div>
+              <div><dt>Coverage</dt><dd>3 verified gauges</dd></div>
               <div><dt>Flow source</dt><dd>Water Survey of Canada</dd></div>
               <div><dt>Time shown</dt><dd>Atlantic</dd></div>
             </dl>
@@ -85,7 +85,7 @@ export default function Home() {
                 <span className="station-id">WSC {station.id}</span>
                 <StatusPill status={station.score.confidence} />
               </div>
-              <h3>{station.name.replace("NORTHEAST ", "Northeast ").replace(" RIVER AT ", " River at ")}</h3>
+              <h3>{formatStationName(station.name)}</h3>
               <div className="card-metrics">
                 <div>
                   <span className="metric-label">Measured flow</span>
@@ -117,8 +117,8 @@ export default function Home() {
         <h2>What each value means</h2>
         <div className="method-grid">
           <article><span>Gauge</span><div><h3>Discharge is measured at one location</h3><p>It does not describe every pool, tributary, or access point on the river.</p></div></article>
-          <article><span>Weather</span><div><h3>Weather is modeled near the gauge</h3><p>Air temperature, rain, and cloud cover are not water-temperature measurements.</p></div></article>
-          <article><span>Score</span><div><h3>The rules are experimental</h3><p>The score summarizes selected conditions. It does not predict catches, safety, or fish abundance.</p></div></article>
+          <article><span>Temperature</span><div><h3>Water temperature is used only when measured</h3><p>Stations without that output keep an explicit data gap; nearby modeled air temperature is never substituted.</p></div></article>
+          <article><span>Score</span><div><h3>The rules are experimental</h3><p>Version 1.0 remains current while the seasonal v1.1 candidate runs transparently in the score lab.</p></div></article>
         </div>
       </section>
     </main>
@@ -146,7 +146,7 @@ function HeroReading({
       <div className="trace-heading">
         <div>
           <p className="trace-label">WSC {station.id} · measured discharge</p>
-          <p className="trace-name">Northeast Margaree River</p>
+          <p className="trace-name">{formatStationName(station.name)}</p>
         </div>
         <StatusPill status={station.score.status} />
       </div>

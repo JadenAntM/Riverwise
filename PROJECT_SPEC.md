@@ -70,7 +70,7 @@ Weather, scoring, additional stations, the chart, and the map follow this slice 
 ## Data model
 
 - `stations`: official ID (PK), name, latitude, longitude, province, active, has_discharge, display_order, source_url.
-- `hydro_observations`: station_id, observed_at_utc, parameter (`discharge` / `level`), value, unit, qualifier (nullable), ingested_at_utc. Unique on (station_id, observed_at_utc, parameter).
+- `hydro_observations`: station_id, observed_at_utc, parameter (`discharge` / `level` / `water_temperature` / `daily_discharge`), value, unit, qualifier (nullable), ingested_at_utc. Unique on (station_id, observed_at_utc, parameter). The latter two parameters are post-MVP extensions and do not change the v1 contract.
 - `weather_hours`: station_id, valid_at_utc, kind (`historical_or_modelled` / `forecast`), air_temp_c, precip_mm, cloud_cover_pct, pressure_hpa, ingested_at_utc. Unique on (station_id, valid_at_utc, kind). If past weather is unavailable, leave historical fields null rather than labeling a forecast as observed.
 - `score_snapshots`: station_id, computed_at_utc, hydro_observed_at_utc, score (nullable), status, confidence, available_points, earned_points, components_json, rules_version.
 - `ingest_runs`: started_at_utc, ended_at_utc, source, status, fetched/upserted counts, duration, and concise error.
@@ -118,12 +118,29 @@ Show beside every score:
 
 Link to the source data and current official fishing regulations.
 
+## Post-MVP score experiment
+
+Keep `v1.0.0` as the primary dashboard score while running `v1.1.0-shadow` beside it in a clearly labeled Score Lab. This makes the change reviewable without silently changing the meaning of existing station rankings.
+
+The candidate uses three components:
+
+| Component | Maximum | Candidate rule |
+| --- | ---: | --- |
+| Season-matched flow percentile | 4 | Compare current discharge with prior-year daily discharge within ±7 calendar days. Require at least 21 values across three years. Award 4 points for the 25th–75th percentile inclusive, 2 for the 10th–<25th or >75th–90th percentile, and 0 otherwise. |
+| 6-hour flow stability | 2 | Award 2 points when absolute change is ≤10%, 1 when it is >10% and ≤25%, and 0 otherwise. |
+| Measured water temperature | 4 | Award 4 points for 12–16°C inclusive, 2 for 6–<12°C or >16–18°C, and 0 otherwise. Require a reading no more than three hours old. |
+
+When measured water temperature is absent or stale, return a partial score over the six available points and state the omission. Never substitute modeled air temperature. The temperature bands are candidate product assumptions, not validated biological thresholds. WSC notes that non-flow/level outputs lack standardized quality assurance, so retain timestamps and qualifiers and avoid implying cross-station equivalence.
+
+The comparison endpoint and UI must say that a different score is not proof of greater accuracy. Empirical validation would require consented, effort-normalized catch outcomes and should include zero-catch trips; Riverwise does not collect those records in this iteration.
+
 ## API contract
 
 - `GET /health`: process and database diagnostics. Do not expose secrets or internal connection details.
 - `GET /api/v1/stations`: every configured station, coordinates, latest flow with unit/time, score/status/confidence, coverage, and summary reasons. Include stations with missing data.
-- `GET /api/v1/stations/{id}`: metadata, recent hydro/weather, baseline, trends with windows/units, score components, data ages, and provenance.
+- `GET /api/v1/stations/{id}`: metadata, recent hydro/weather, baseline, trends with windows/units, score components, data ages, provenance, and the shadow candidate comparison fields.
 - `GET /api/v1/stations/{id}/history?hours=48`: ordered observed discharge and optional level, timestamps, and qualifiers. Bound hours to 1–168.
+- `GET /api/v1/scores/compare`: both rule versions plus the measured-temperature and seasonal-history context for every configured station.
 
 Unknown station → 404. Known station without usable data → 200 with explicit nulls/status. For an invalid query, use FastAPI’s standard `422` validation response unless a deliberate compatibility layer changes it to `400`; document the selected contract in OpenAPI and tests.
 
@@ -209,7 +226,7 @@ Use these measurements in the README and résumé only with their testing contex
 
 - Expand verified station coverage.
 - Add alerts and favourites.
-- Add season-matched percentiles from carefully checked HYDAT history.
+- Evaluate whether the shadow season-matched percentile should replace the production baseline after a documented observation period.
 - Add a clearly labeled future-weather panel.
 - Explore empirical modeling only with consented, sufficient catch records and meaningful validation.
 

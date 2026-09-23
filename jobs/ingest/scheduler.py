@@ -10,9 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.database import SessionLocal  # noqa: E402
 from ingest import ingest_live  # noqa: E402
 
+from app.database import SessionLocal  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("riverwise.scheduler")

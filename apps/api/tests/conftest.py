@@ -12,6 +12,7 @@ from app.database import Base, get_db
 from app.ingestion import (
     parse_open_meteo,
     parse_wsc_csv,
+    parse_wsc_daily_csv,
     seed_station,
     upsert_hydro,
     upsert_weather,
@@ -41,6 +42,14 @@ def session() -> Session:
             (ROOT / "tests" / "fixtures" / "wsc_01FB001_sample.csv").read_text(),
             {station["id"]},
         )
+        temperature = parse_wsc_csv(
+            (ROOT / "tests" / "fixtures" / "wsc_01FB001_temperature_sample.csv").read_text(),
+            {station["id"]},
+        )
+        daily = parse_wsc_daily_csv(
+            (ROOT / "tests" / "fixtures" / "wsc_01FB001_daily_sample.csv").read_text(),
+            {station["id"]},
+        )
         weather = parse_open_meteo(
             json.loads(
                 (ROOT / "tests" / "fixtures" / "open_meteo_01FB001_sample.json").read_text()
@@ -48,7 +57,7 @@ def session() -> Session:
             station["id"],
             EVALUATION_TIME,
         )
-        upsert_hydro(db, hydro, EVALUATION_TIME)
+        upsert_hydro(db, [*hydro, *temperature, *daily], EVALUATION_TIME)
         upsert_weather(db, weather, EVALUATION_TIME)
         db.add(
             IngestRun(
@@ -57,8 +66,8 @@ def session() -> Session:
                 source="offline_fixtures",
                 station_id=station["id"],
                 status="success",
-                fetched_count=len(hydro) + len(weather),
-                upserted_count=len(hydro) + len(weather),
+                fetched_count=len(hydro) + len(temperature) + len(daily) + len(weather),
+                upserted_count=len(hydro) + len(temperature) + len(daily) + len(weather),
                 duration_ms=10,
             )
         )

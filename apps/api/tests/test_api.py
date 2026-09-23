@@ -11,6 +11,11 @@ def test_station_vertical_slice(client: TestClient) -> None:
     assert payload["latest_flow"]["observed_at_utc"].endswith("Z")
     assert payload["latest_flow"]["approval"] == "Provisional/Provisoire"
     assert payload["baseline_median_m3s"] is not None
+    assert payload["latest_water_temperature"]["value"] == 11.15
+    assert payload["seasonal_flow_percentile"] is not None
+    assert payload["seasonal_sample_count"] == 42
+    assert payload["seasonal_year_count"] == 6
+    assert payload["candidate_score"]["rules_version"] == "v1.1.0-shadow"
 
 
 def test_station_list_includes_all_verified_gauges(client: TestClient) -> None:
@@ -28,6 +33,7 @@ def test_known_station_without_observations_is_explicit(client: TestClient) -> N
     assert response.status_code == 200
     assert response.json()["latest_flow"] is None
     assert response.json()["score"]["status"] == "insufficient_data"
+    assert response.json()["candidate_score"]["status"] == "insufficient_data"
 
 
 def test_ingestion_status_reports_sources_and_station_freshness(client: TestClient) -> None:
@@ -38,6 +44,18 @@ def test_ingestion_status_reports_sources_and_station_freshness(client: TestClie
     assert len(payload["stations"]) == 3
     assert payload["sources"][0]["source"] == "offline_fixtures"
     assert payload["sources"][0]["station_id"] == "01FB001"
+
+
+def test_score_comparison_keeps_current_and_candidate_versions(client: TestClient) -> None:
+    response = client.get("/api/v1/scores/compare")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 3
+    first = payload[0]
+    assert first["station_id"] == "01FB001"
+    assert first["current_score"]["rules_version"] == "v1.0.0"
+    assert first["candidate_score"]["rules_version"] == "v1.1.0-shadow"
+    assert first["latest_water_temperature"]["unit"] == "°C"
 
 
 def test_history_is_ordered_and_bounded(client: TestClient) -> None:
