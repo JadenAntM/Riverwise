@@ -43,6 +43,22 @@ class HydroRow:
     approval: str | None
 
 
+@dataclass(frozen=True)
+class UpsertResult:
+    processed: int = 0
+    inserted: int = 0
+    updated: int = 0
+    revisions: int = 0
+
+    def __add__(self, other: "UpsertResult") -> "UpsertResult":
+        return UpsertResult(
+            processed=self.processed + other.processed,
+            inserted=self.inserted + other.inserted,
+            updated=self.updated + other.updated,
+            revisions=self.revisions + other.revisions,
+        )
+
+
 def parse_wsc_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]:
     reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")))
     normalized_headers = {header.strip() for header in reader.fieldnames or []}
@@ -152,8 +168,12 @@ def parse_open_meteo(
     return result
 
 
-def upsert_hydro(session: Session, rows: list[HydroRow], ingested_at: datetime) -> int:
-    count = 0
+def upsert_hydro(
+    session: Session, rows: list[HydroRow], ingested_at: datetime
+) -> UpsertResult:
+    inserted = 0
+    updated = 0
+    revisions = 0
     for row in rows:
         existing = session.scalar(
             select(HydroObservation).where(
@@ -163,20 +183,32 @@ def upsert_hydro(session: Session, rows: list[HydroRow], ingested_at: datetime) 
             )
         )
         if existing:
+            changed = (
+                existing.value != row.value
+                or existing.unit != row.unit
+                or existing.qualifier != row.qualifier
+                or existing.approval != row.approval
+            )
             existing.value = row.value
             existing.unit = row.unit
             existing.qualifier = row.qualifier
             existing.approval = row.approval
             existing.ingested_at_utc = ingested_at
+            updated += 1
+            revisions += int(changed)
         else:
             session.add(HydroObservation(**row.__dict__, ingested_at_utc=ingested_at))
-        count += 1
+            inserted += 1
     session.commit()
-    return count
+    return UpsertResult(len(rows), inserted, updated, revisions)
 
 
-def upsert_weather(session: Session, rows: list[dict[str, Any]], ingested_at: datetime) -> int:
-    count = 0
+def upsert_weather(
+    session: Session, rows: list[dict[str, Any]], ingested_at: datetime
+) -> UpsertResult:
+    inserted = 0
+    updated = 0
+    revisions = 0
     for row in rows:
         existing = session.scalar(
             select(WeatherHour).where(
@@ -187,13 +219,16 @@ def upsert_weather(session: Session, rows: list[dict[str, Any]], ingested_at: da
         )
         values = {**row, "ingested_at_utc": ingested_at}
         if existing:
+            changed = any(getattr(existing, key) != value for key, value in row.items())
             for key, value in values.items():
                 setattr(existing, key, value)
+            updated += 1
+            revisions += int(changed)
         else:
             session.add(WeatherHour(**values))
-        count += 1
+            inserted += 1
     session.commit()
-    return count
+    return UpsertResult(len(rows), inserted, updated, revisions)
 
 
 def seed_station(session: Session, data: dict[str, Any]) -> Station:

@@ -6,18 +6,21 @@ The score is not a prediction of catches, river safety, fish abundance, habitat 
 
 ## Current status
 
-The first complete vertical slice now runs across three verified Water Survey of Canada gauges:
+The complete local data product now runs across six verified Water Survey of Canada gauges:
 
 - `01FB001` — **NORTHEAST MARGAREE RIVER AT MARGAREE VALLEY**
 - `01FB003` — **SOUTHWEST MARGAREE RIVER NEAR UPPER MARGAREE**
 - `01FC002` — **CHETICAMP RIVER ABOVE ROBERT BROOK**
+- `01EO001` — **ST. MARYS RIVER AT STILLWATER**
+- `01EF001` — **LAHAVE RIVER AT WEST NORTHFIELD**
+- `01ED005` — **MERSEY RIVER BELOW GEORGE LAKE**
 
-On 2026-09-23, all three official recent-data feeds returned current parameter 47 discharge and completed a live ingestion run successfully.
+On 2026-09-23, all six official recent-data feeds returned current parameter 47 discharge and completed a live ingestion run successfully. The three province-wide additions also returned 3,388–3,478 daily observations in the bounded ten-year backfill.
 
 Implemented:
 
 - Versioned PostgreSQL schema and Alembic migration.
-- Three verified editable station seeds.
+- Six verified editable station seeds spanning Cape Breton, eastern mainland Nova Scotia, and the South Shore.
 - Typed WSC CSV and Open-Meteo parsing.
 - Measured WSC water-temperature ingestion where a gauge reports parameter 5.
 - A bounded WSC daily-flow backfill for season-matched station baselines.
@@ -25,6 +28,9 @@ Implemented:
 - Offline fixture import and live provider import with bounded timeout/retries and independent failure recording.
 - Pure versioned scoring with explicit evaluation time.
 - A `v1.1.0-shadow` candidate score and side-by-side Score Lab; `v1.0.0` remains the dashboard score.
+- Idempotent hourly snapshots for both score versions, including partial, stale, and unavailable states.
+- Seven- and 30-day score-history charts on each station page.
+- Measured reliability reporting for provider success, data freshness, temperature coverage, observation counts, historical depth, and changed provider values.
 - Station list, detail, 48-hour history, and ingestion-status API endpoints.
 - Responsive station list/detail interface with visible data gaps and provenance.
 - Hourly ingestion scheduler with source- and station-level run monitoring.
@@ -51,7 +57,7 @@ cp .env.example .env
 docker compose up --build -d db api web scheduler
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The rule comparison is at [http://localhost:3000/score-lab](http://localhost:3000/score-lab), ingestion status is at [http://localhost:3000/status](http://localhost:3000/status), and API documentation is at [http://localhost:8000/docs](http://localhost:8000/docs).
+Open [http://localhost:3000](http://localhost:3000). The rule comparison is at [http://localhost:3000/score-lab](http://localhost:3000/score-lab), reliability and ingestion status are at [http://localhost:3000/status](http://localhost:3000/status), and API documentation is at [http://localhost:8000/docs](http://localhost:8000/docs).
 
 The scheduler performs a live import when it starts and then at 10 minutes past each hour. Real-time hydrometric and weather data are refreshed each cycle. Daily discharge history is imported once and refreshed at most every 20 hours. It needs internet access, and scheduling pauses when Docker Desktop or the computer is stopped or asleep. No provider API keys or accounts are required.
 
@@ -117,8 +123,10 @@ To check local configuration, fixture parsing, database connectivity, and statio
 - `GET /health`
 - `GET /api/v1/stations`
 - `GET /api/v1/ingestion`
+- `GET /api/v1/reliability?days=30` (`days` must be `7` or `30`)
 - `GET /api/v1/scores/compare`
 - `GET /api/v1/stations/{id}`
+- `GET /api/v1/stations/{id}/score-history?days=7` (`days` must be `7` or `30`)
 - `GET /api/v1/stations/{id}/history?hours=48` (`1–168`; invalid values return FastAPI’s documented `422` validation response)
 
 Known stations without usable data return `200` with explicit null/status fields. Unknown stations return `404`.
@@ -143,6 +151,9 @@ Official sources:
 - [Station 01FB001](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FB001)
 - [Station 01FB003](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FB003)
 - [Station 01FC002](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FC002)
+- [Station 01EO001](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01EO001)
+- [Station 01EF001](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01EF001)
+- [Station 01ED005](https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01ED005)
 - [Open-Meteo forecast API](https://open-meteo.com/en/docs)
 
 ## Scoring
@@ -159,4 +170,5 @@ See the architecture decisions in [`docs/decisions`](docs/decisions) and the ful
 - A gauge represents its location, not an entire river or access point.
 - Nearby modeled air temperature is not water temperature.
 - Missing values and gaps are preserved rather than interpolated for scoring.
+- Provider revision counters record source-field changes detected after this feature was enabled; they are not reconstructed retroactively.
 - Consult official regulations and local safety information before fishing.

@@ -77,6 +77,24 @@ export type History = {
   observations: Observation[];
 };
 
+export type ScoreSnapshot = {
+  computed_at_utc: string;
+  hydro_observed_at_utc: string | null;
+  value: number | null;
+  status: Score["status"];
+  confidence: Score["confidence"];
+  available_points: number;
+  earned_points: number;
+  rules_version: string;
+};
+
+export type ScoreHistory = {
+  station_id: string;
+  days: 7 | 30;
+  generated_at_utc: string;
+  snapshots: ScoreSnapshot[];
+};
+
 export type IngestSourceStatus = {
   source: string;
   station_id: string | null;
@@ -85,8 +103,50 @@ export type IngestSourceStatus = {
   last_success_at_utc: string | null;
   fetched_count: number;
   upserted_count: number;
+  inserted_count: number;
+  updated_count: number;
+  revision_count: number;
   duration_ms: number | null;
   error: string | null;
+};
+
+export type ProviderReliability = {
+  source: string;
+  station_id: string;
+  attempts: number;
+  successes: number;
+  success_rate_pct: number;
+  fetched_count: number;
+  inserted_count: number;
+  updated_count: number;
+  revision_count: number;
+  last_attempt_at_utc: string;
+  last_success_at_utc: string | null;
+};
+
+export type StationReliability = {
+  id: string;
+  name: string;
+  latest_discharge_at_utc: string | null;
+  discharge_age_minutes: number | null;
+  latest_water_temperature_at_utc: string | null;
+  water_temperature_age_minutes: number | null;
+  water_temperature_available_snapshots: number;
+  candidate_snapshot_count: number;
+  water_temperature_availability_pct: number | null;
+  recent_discharge_observation_count: number;
+  recent_water_temperature_observation_count: number;
+  historical_daily_observation_count: number;
+  historical_first_date: string | null;
+  historical_last_date: string | null;
+  historical_year_count: number;
+};
+
+export type Reliability = {
+  generated_at_utc: string;
+  days: 7 | 30;
+  providers: ProviderReliability[];
+  stations: StationReliability[];
 };
 
 export type StationFreshness = {
@@ -125,8 +185,16 @@ export function getHistory(id: string): Promise<History> {
   return request(`/api/v1/stations/${encodeURIComponent(id)}/history?hours=48`);
 }
 
+export function getScoreHistory(id: string, days: 7 | 30): Promise<ScoreHistory> {
+  return request(`/api/v1/stations/${encodeURIComponent(id)}/score-history?days=${days}`);
+}
+
 export function getIngestionStatus(): Promise<IngestionStatus> {
   return request("/api/v1/ingestion");
+}
+
+export function getReliability(days: 7 | 30): Promise<Reliability> {
+  return request(`/api/v1/reliability?days=${days}`);
 }
 
 export function getScoreComparison(): Promise<ScoreComparison[]> {

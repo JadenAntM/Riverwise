@@ -73,7 +73,7 @@ Weather, scoring, additional stations, the chart, and the map follow this slice 
 - `hydro_observations`: station_id, observed_at_utc, parameter (`discharge` / `level` / `water_temperature` / `daily_discharge`), value, unit, qualifier (nullable), ingested_at_utc. Unique on (station_id, observed_at_utc, parameter). The latter two parameters are post-MVP extensions and do not change the v1 contract.
 - `weather_hours`: station_id, valid_at_utc, kind (`historical_or_modelled` / `forecast`), air_temp_c, precip_mm, cloud_cover_pct, pressure_hpa, ingested_at_utc. Unique on (station_id, valid_at_utc, kind). If past weather is unavailable, leave historical fields null rather than labeling a forecast as observed.
 - `score_snapshots`: station_id, computed_at_utc, hydro_observed_at_utc, score (nullable), status, confidence, available_points, earned_points, components_json, rules_version.
-- `ingest_runs`: started_at_utc, ended_at_utc, source, status, fetched/upserted counts, duration, and concise error.
+- `ingest_runs`: started_at_utc, ended_at_utc, source, status, fetched/processed/inserted/refreshed/revision counts, duration, and concise error. A revision means an existing row's provider value, unit, qualifier, or approval changed; it is not inferred retroactively.
 
 Index hydro on (station_id, parameter, observed_at_utc DESC) and weather on (station_id, valid_at_utc DESC). Store UTC; display Atlantic time with an explicit timezone and correct daylight-saving offset. Preserve gaps rather than inventing measurements.
 
@@ -141,6 +141,8 @@ The comparison endpoint and UI must say that a different score is not proof of g
 - `GET /api/v1/stations/{id}`: metadata, recent hydro/weather, baseline, trends with windows/units, score components, data ages, provenance, and the shadow candidate comparison fields.
 - `GET /api/v1/stations/{id}/history?hours=48`: ordered observed discharge and optional level, timestamps, and qualifiers. Bound hours to 1–168.
 - `GET /api/v1/scores/compare`: both rule versions plus the measured-temperature and seasonal-history context for every configured station.
+- `GET /api/v1/stations/{id}/score-history?days=7`: stored v1.0 and v1.1 snapshots for a seven- or 30-day window, including null values and their status/confidence.
+- `GET /api/v1/reliability?days=30`: provider/station success rates and row-change counts plus station freshness, temperature availability, observation counts, and historical coverage for a seven- or 30-day window.
 
 Unknown station → 404. Known station without usable data → 200 with explicit nulls/status. For an invalid query, use FastAPI’s standard `422` validation response unless a deliberate compatibility layer changes it to `400`; document the selected contract in OpenAPI and tests.
 
@@ -161,6 +163,10 @@ Provide loading, error, empty, stale, partial, and insufficient-history states. 
 - Provide a local diagnostic command that checks configuration, database connectivity, seed data, and fixture parsing.
 - Keep ingestion retry counts and timeouts bounded and configurable.
 - Preserve enough metadata to diagnose a revised observation without keeping unrestricted raw provider data indefinitely.
+
+After every scheduled ingestion, persist one snapshot per station and rules version using the same explicit evaluation time as the import. Upsert on station, evaluation time, and rules version so a deterministic retry cannot duplicate history. Preserve unavailable snapshots with a nullable hydrometric timestamp so charts do not hide operational gaps.
+
+Reliability percentages must state their window and numerator/denominator. Count provider success from stored ingestion attempts. Distinguish inserted rows, refreshed existing rows, and changed provider values. Temperature availability is the share of candidate snapshots backed by a fresh measured water-temperature component, not the share of stations with nearby air temperature.
 
 ## Repository quality
 
@@ -229,6 +235,10 @@ Use these measurements in the README and résumé only with their testing contex
 - Evaluate whether the shadow season-matched percentile should replace the production baseline after a documented observation period.
 - Add a clearly labeled future-weather panel.
 - Explore empirical modeling only with consented, sufficient catch records and meaningful validation.
+
+## Province-wide station expansion
+
+The first post-MVP expansion adds three active gauges with verified current discharge and bounded daily history: St. Marys River at Stillwater (`01EO001`), LaHave River at West Northfield (`01EF001`), and Mersey River below George Lake (`01ED005`). They expand hydrometric coverage beyond Cape Breton; their presence does not claim fishing access, habitat quality, legal eligibility, or safety at those locations. Continue adding stations in small verified groups rather than importing every active station automatically.
 
 ## Implementation principles
 

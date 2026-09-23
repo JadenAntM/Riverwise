@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -96,6 +96,94 @@ class HistoryResponse(BaseModel):
     observations: list[ObservationOut]
 
 
+class ScoreSnapshotOut(BaseModel):
+    computed_at_utc: datetime
+    hydro_observed_at_utc: datetime | None
+    value: float | None
+    status: str
+    confidence: str
+    available_points: int
+    earned_points: int
+    rules_version: str
+
+    @field_validator("computed_at_utc", "hydro_observed_at_utc")
+    @classmethod
+    def mark_snapshot_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class ScoreHistoryResponse(BaseModel):
+    station_id: str
+    days: int
+    generated_at_utc: datetime
+    snapshots: list[ScoreSnapshotOut]
+
+    @field_validator("generated_at_utc")
+    @classmethod
+    def mark_history_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class ProviderReliabilityOut(BaseModel):
+    source: str
+    station_id: str
+    attempts: int
+    successes: int
+    success_rate_pct: float
+    fetched_count: int
+    inserted_count: int
+    updated_count: int
+    revision_count: int
+    last_attempt_at_utc: datetime
+    last_success_at_utc: datetime | None
+
+    @field_validator("last_attempt_at_utc", "last_success_at_utc")
+    @classmethod
+    def mark_provider_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class StationReliabilityOut(BaseModel):
+    id: str
+    name: str
+    latest_discharge_at_utc: datetime | None
+    discharge_age_minutes: int | None
+    latest_water_temperature_at_utc: datetime | None
+    water_temperature_age_minutes: int | None
+    water_temperature_available_snapshots: int
+    candidate_snapshot_count: int
+    water_temperature_availability_pct: float | None
+    recent_discharge_observation_count: int
+    recent_water_temperature_observation_count: int
+    historical_daily_observation_count: int
+    historical_first_date: date | None
+    historical_last_date: date | None
+    historical_year_count: int
+
+    @field_validator("latest_discharge_at_utc", "latest_water_temperature_at_utc")
+    @classmethod
+    def mark_reliability_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class ReliabilityResponse(BaseModel):
+    generated_at_utc: datetime
+    days: int
+    providers: list[ProviderReliabilityOut]
+    stations: list[StationReliabilityOut]
+
+    @field_validator("generated_at_utc")
+    @classmethod
+    def mark_generated_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str
@@ -118,6 +206,9 @@ class IngestSourceStatusOut(BaseModel):
     last_success_at_utc: datetime | None
     fetched_count: int
     upserted_count: int
+    inserted_count: int
+    updated_count: int
+    revision_count: int
     duration_ms: int | None
     error: str | None
 

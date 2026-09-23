@@ -13,8 +13,11 @@ from .schemas import (
     HistoryResponse,
     IngestionStatusOut,
     ObservationOut,
+    ReliabilityResponse,
     ScoreComparisonOut,
+    ScoreHistoryResponse,
     ScoreOut,
+    ScoreSnapshotOut,
     StationDetail,
     StationSummary,
     WeatherOut,
@@ -25,6 +28,8 @@ from .service import (
     hydro_for_station,
     ingestion_overview,
     last_ingest,
+    reliability_overview,
+    score_history,
     score_station,
 )
 
@@ -134,6 +139,23 @@ def ingestion_status(session: Session = Depends(get_db)) -> IngestionStatusOut:
     )
 
 
+@app.get("/api/v1/reliability", response_model=ReliabilityResponse)
+def reliability_status(
+    days: int = Query(default=30),
+    session: Session = Depends(get_db),
+) -> ReliabilityResponse:
+    if days not in {7, 30}:
+        raise HTTPException(status_code=422, detail="days must be either 7 or 30")
+    now = datetime.now(UTC)
+    overview = reliability_overview(session, now, days)
+    return ReliabilityResponse(
+        generated_at_utc=now,
+        days=days,
+        providers=overview["providers"],
+        stations=overview["stations"],
+    )
+
+
 @app.get("/api/v1/scores/compare", response_model=list[ScoreComparisonOut])
 def compare_scores(session: Session = Depends(get_db)) -> list[ScoreComparisonOut]:
     now = datetime.now(UTC)
@@ -217,4 +239,39 @@ def station_history(
         station_id=station_id,
         hours=hours,
         observations=[ObservationOut.model_validate(item) for item in observations],
+    )
+
+
+@app.get(
+    "/api/v1/stations/{station_id}/score-history",
+    response_model=ScoreHistoryResponse,
+)
+def station_score_history(
+    station_id: str,
+    days: int = Query(default=7),
+    session: Session = Depends(get_db),
+) -> ScoreHistoryResponse:
+    if days not in {7, 30}:
+        raise HTTPException(status_code=422, detail="days must be either 7 or 30")
+    if not session.get(Station, station_id):
+        raise HTTPException(status_code=404, detail="Station not found")
+    now = datetime.now(UTC)
+    snapshots = score_history(session, station_id, now, days)
+    return ScoreHistoryResponse(
+        station_id=station_id,
+        days=days,
+        generated_at_utc=now,
+        snapshots=[
+            ScoreSnapshotOut(
+                computed_at_utc=snapshot.computed_at_utc,
+                hydro_observed_at_utc=snapshot.hydro_observed_at_utc,
+                value=snapshot.score,
+                status=snapshot.status,
+                confidence=snapshot.confidence,
+                available_points=snapshot.available_points,
+                earned_points=snapshot.earned_points,
+                rules_version=snapshot.rules_version,
+            )
+            for snapshot in snapshots
+        ],
     )

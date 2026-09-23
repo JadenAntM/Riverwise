@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from statistics import median
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import HydroObservation, IngestRun, Station, WeatherHour
+from .models import HydroObservation, IngestRun, ScoreSnapshot, Station, WeatherHour
 from .scoring import (
+    CANDIDATE_RULES_VERSION,
+    RULES_VERSION,
     CandidateScoreInput,
     ScoreInput,
     ScoreResult,
@@ -202,6 +204,229 @@ def candidate_score_station(
     }
 
 
+def persist_score_snapshots(
+    session: Session, station_ids: list[str], evaluation_time: datetime
+) -> int:
+    written = 0
+    for station_id in station_ids:
+        current, base_context = score_station(session, station_id, evaluation_time)
+        candidate, context = candidate_score_station(
+            session, station_id, evaluation_time, base_context
+        )
+        latest = context.get("latest")
+        hydro_observed_at = _aware(latest.observed_at_utc) if latest else None
+        for result, rules_version in (
+            (current, RULES_VERSION),
+            (candidate, CANDIDATE_RULES_VERSION),
+        ):
+            snapshot = session.scalar(
+                select(ScoreSnapshot).where(
+                    ScoreSnapshot.station_id == station_id,
+                    ScoreSnapshot.computed_at_utc == evaluation_time,
+                    ScoreSnapshot.rules_version == rules_version,
+                )
+            )
+            values = {
+                "hydro_observed_at_utc": hydro_observed_at,
+                "score": result.score if result else None,
+                "status": result.status.value if result else "insufficient_data",
+                "confidence": result.confidence if result else "unavailable",
+                "available_points": result.available_points if result else 0,
+                "earned_points": result.earned_points if result else 0,
+                "components_json": {
+                    "components": (
+                        [component.__dict__ for component in result.components]
+                        if result
+                        else []
+                    ),
+                    "reasons": (
+                        result.reasons
+                        if result
+                        else ["No discharge observations are available."]
+                    ),
+                },
+            }
+            if snapshot:
+                for key, value in values.items():
+                    setattr(snapshot, key, value)
+            else:
+                session.add(
+                    ScoreSnapshot(
+                        station_id=station_id,
+                        computed_at_utc=evaluation_time,
+                        rules_version=rules_version,
+                        **values,
+                    )
+                )
+            written += 1
+    session.commit()
+    return written
+
+
+def score_history(
+    session: Session, station_id: str, evaluation_time: datetime, days: int
+) -> list[ScoreSnapshot]:
+    return list(
+        session.scalars(
+            select(ScoreSnapshot)
+            .where(
+                ScoreSnapshot.station_id == station_id,
+                ScoreSnapshot.computed_at_utc >= evaluation_time - timedelta(days=days),
+            )
+            .order_by(ScoreSnapshot.computed_at_utc, ScoreSnapshot.rules_version)
+        ).all()
+    )
+
+
+def reliability_overview(
+    session: Session, evaluation_time: datetime, days: int
+) -> dict:
+    cutoff = evaluation_time - timedelta(days=days)
+    runs = list(
+        session.scalars(
+            select(IngestRun)
+            .where(
+                IngestRun.station_id.is_not(None),
+                IngestRun.started_at_utc >= cutoff,
+            )
+            .order_by(IngestRun.started_at_utc)
+        ).all()
+    )
+    grouped_runs: dict[tuple[str, str], list[IngestRun]] = {}
+    for run in runs:
+        if run.station_id:
+            grouped_runs.setdefault((run.source, run.station_id), []).append(run)
+
+    providers = []
+    for (source, station_id), group in sorted(grouped_runs.items()):
+        successes = [run for run in group if run.status == "success"]
+        providers.append(
+            {
+                "source": source,
+                "station_id": station_id,
+                "attempts": len(group),
+                "successes": len(successes),
+                "success_rate_pct": round(len(successes) / len(group) * 100, 1),
+                "fetched_count": sum(run.fetched_count for run in group),
+                "inserted_count": sum(run.inserted_count for run in group),
+                "updated_count": sum(run.updated_count for run in group),
+                "revision_count": sum(run.revision_count for run in group),
+                "last_attempt_at_utc": _aware(group[-1].started_at_utc),
+                "last_success_at_utc": (
+                    _aware(successes[-1].started_at_utc) if successes else None
+                ),
+            }
+        )
+
+    stations = list(session.scalars(select(Station).order_by(Station.display_order)).all())
+    station_rows = []
+    for station in stations:
+        latest_discharge = session.scalar(
+            select(HydroObservation)
+            .where(
+                HydroObservation.station_id == station.id,
+                HydroObservation.parameter == "discharge",
+            )
+            .order_by(HydroObservation.observed_at_utc.desc())
+            .limit(1)
+        )
+        latest_temperature = session.scalar(
+            select(HydroObservation)
+            .where(
+                HydroObservation.station_id == station.id,
+                HydroObservation.parameter == "water_temperature",
+            )
+            .order_by(HydroObservation.observed_at_utc.desc())
+            .limit(1)
+        )
+        observation_counts = {
+            parameter: session.scalar(
+                select(func.count())
+                .select_from(HydroObservation)
+                .where(
+                    HydroObservation.station_id == station.id,
+                    HydroObservation.parameter == parameter,
+                    HydroObservation.observed_at_utc >= cutoff,
+                )
+            )
+            or 0
+            for parameter in ("discharge", "water_temperature")
+        }
+        daily_rows = list(
+            session.scalars(
+                select(HydroObservation)
+                .where(
+                    HydroObservation.station_id == station.id,
+                    HydroObservation.parameter == "daily_discharge",
+                )
+                .order_by(HydroObservation.observed_at_utc)
+            ).all()
+        )
+        candidate_snapshots = list(
+            session.scalars(
+                select(ScoreSnapshot).where(
+                    ScoreSnapshot.station_id == station.id,
+                    ScoreSnapshot.rules_version == CANDIDATE_RULES_VERSION,
+                    ScoreSnapshot.computed_at_utc >= cutoff,
+                )
+            ).all()
+        )
+        temperature_snapshots = sum(
+            any(
+                component.get("key") == "water_temperature"
+                and component.get("points") is not None
+                for component in snapshot.components_json.get("components", [])
+            )
+            for snapshot in candidate_snapshots
+        )
+        discharge_at = (
+            _aware(latest_discharge.observed_at_utc) if latest_discharge else None
+        )
+        temperature_at = (
+            _aware(latest_temperature.observed_at_utc) if latest_temperature else None
+        )
+        station_rows.append(
+            {
+                "id": station.id,
+                "name": station.name,
+                "latest_discharge_at_utc": discharge_at,
+                "discharge_age_minutes": (
+                    max(0, int((evaluation_time - discharge_at).total_seconds() / 60))
+                    if discharge_at
+                    else None
+                ),
+                "latest_water_temperature_at_utc": temperature_at,
+                "water_temperature_age_minutes": (
+                    max(0, int((evaluation_time - temperature_at).total_seconds() / 60))
+                    if temperature_at
+                    else None
+                ),
+                "water_temperature_available_snapshots": temperature_snapshots,
+                "candidate_snapshot_count": len(candidate_snapshots),
+                "water_temperature_availability_pct": (
+                    round(temperature_snapshots / len(candidate_snapshots) * 100, 1)
+                    if candidate_snapshots
+                    else None
+                ),
+                "recent_discharge_observation_count": observation_counts["discharge"],
+                "recent_water_temperature_observation_count": observation_counts[
+                    "water_temperature"
+                ],
+                "historical_daily_observation_count": len(daily_rows),
+                "historical_first_date": (
+                    _aware(daily_rows[0].observed_at_utc).date() if daily_rows else None
+                ),
+                "historical_last_date": (
+                    _aware(daily_rows[-1].observed_at_utc).date() if daily_rows else None
+                ),
+                "historical_year_count": len(
+                    {_aware(row.observed_at_utc).year for row in daily_rows}
+                ),
+            }
+        )
+    return {"providers": providers, "stations": station_rows}
+
+
 def last_ingest(session: Session) -> IngestRun | None:
     return session.scalar(select(IngestRun).order_by(IngestRun.started_at_utc.desc()).limit(1))
 
@@ -232,6 +457,9 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
             "last_success_at_utc": last_success.get(key),
             "fetched_count": run.fetched_count,
             "upserted_count": run.upserted_count,
+            "inserted_count": run.inserted_count,
+            "updated_count": run.updated_count,
+            "revision_count": run.revision_count,
             "duration_ms": run.duration_ms,
             "error": run.error,
         }

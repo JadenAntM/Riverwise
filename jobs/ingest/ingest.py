@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.database import SessionLocal  # noqa: E402
 from app.ingestion import (  # noqa: E402
+    UpsertResult,
     parse_open_meteo,
     parse_wsc_csv,
     parse_wsc_daily_csv,
@@ -23,6 +24,7 @@ from app.ingestion import (  # noqa: E402
     upsert_weather,
 )
 from app.models import HydroObservation, IngestRun  # noqa: E402
+from app.service import persist_score_snapshots  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("riverwise.ingest")
@@ -41,7 +43,7 @@ def _record_run(
     started: datetime,
     status: str,
     fetched: int,
-    upserted: int,
+    stats: UpsertResult,
     error: str | None = None,
 ) -> None:
     ended = datetime.now(UTC)
@@ -53,7 +55,10 @@ def _record_run(
             station_id=station_id,
             status=status,
             fetched_count=fetched,
-            upserted_count=upserted,
+            upserted_count=stats.processed,
+            inserted_count=stats.inserted,
+            updated_count=stats.updated,
+            revision_count=stats.revisions,
             duration_ms=int((ended - started).total_seconds() * 1000),
             error=error[:500] if error else None,
         )
@@ -69,7 +74,8 @@ def _load_seed(session) -> list[dict]:
 
 
 def ingest_fixture(session, evaluation_time: datetime) -> None:
-    station = _load_seed(session)[0]
+    stations = _load_seed(session)
+    station = stations[0]
     started = datetime.now(UTC)
     hydro_text = (ROOT / "tests" / "fixtures" / "wsc_01FB001_sample.csv").read_text()
     weather_data = json.loads(
@@ -86,7 +92,7 @@ def ingest_fixture(session, evaluation_time: datetime) -> None:
     )
     weather = parse_open_meteo(weather_data, station["id"], evaluation_time)
     hydro_rows = [*hydro, *temperature, *daily]
-    upserted = upsert_hydro(session, hydro_rows, started) + upsert_weather(
+    stats = upsert_hydro(session, hydro_rows, started) + upsert_weather(
         session, weather, started
     )
     _record_run(
@@ -96,13 +102,20 @@ def ingest_fixture(session, evaluation_time: datetime) -> None:
         started,
         "success",
         len(hydro_rows) + len(weather),
-        upserted,
+        stats,
+    )
+    snapshot_count = persist_score_snapshots(
+        session, [item["id"] for item in stations], evaluation_time
     )
     _log(
         "ingest_complete",
         source="offline_fixtures",
         fetched=len(hydro_rows) + len(weather),
-        upserted=upserted,
+        upserted=stats.processed,
+        inserted=stats.inserted,
+        updated=stats.updated,
+        revisions=stats.revisions,
+        score_snapshots=snapshot_count,
     )
 
 
@@ -119,6 +132,10 @@ def ingest_live(session, evaluation_time: datetime) -> None:
             _ingest_wsc_daily_station(session, client, station, evaluation_time)
         for station in stations:
             _ingest_weather_station(session, client, station, evaluation_time)
+    snapshot_count = persist_score_snapshots(
+        session, [station["id"] for station in stations], evaluation_time
+    )
+    _log("score_snapshots_complete", written=snapshot_count)
 
 
 def _ingest_wsc_station(
@@ -142,18 +159,23 @@ def _ingest_wsc_station(
         )
         response.raise_for_status()
         rows = parse_wsc_csv(response.text, {station_id})
-        count = upsert_hydro(session, rows, started)
-        _record_run(session, "wsc", station_id, started, "success", len(rows), count)
+        stats = upsert_hydro(session, rows, started)
+        _record_run(session, "wsc", station_id, started, "success", len(rows), stats)
         _log(
             "source_complete",
             source="wsc",
             station_id=station_id,
             fetched=len(rows),
-            upserted=count,
+            upserted=stats.processed,
+            inserted=stats.inserted,
+            updated=stats.updated,
+            revisions=stats.revisions,
         )
     except Exception as exc:
         session.rollback()
-        _record_run(session, "wsc", station_id, started, "failed", 0, 0, str(exc))
+        _record_run(
+            session, "wsc", station_id, started, "failed", 0, UpsertResult(), str(exc)
+        )
         _log("source_failed", source="wsc", station_id=station_id, error=str(exc))
 
 
@@ -205,7 +227,7 @@ def _ingest_wsc_daily_station(
         )
         response.raise_for_status()
         rows = parse_wsc_daily_csv(response.text, {station_id})
-        count = upsert_hydro(session, rows, started)
+        stats = upsert_hydro(session, rows, started)
         _record_run(
             session,
             "wsc_daily",
@@ -213,14 +235,17 @@ def _ingest_wsc_daily_station(
             started,
             "success",
             len(rows),
-            count,
+            stats,
         )
         _log(
             "source_complete",
             source="wsc_daily",
             station_id=station_id,
             fetched=len(rows),
-            upserted=count,
+            upserted=stats.processed,
+            inserted=stats.inserted,
+            updated=stats.updated,
+            revisions=stats.revisions,
         )
     except Exception as exc:
         session.rollback()
@@ -231,7 +256,7 @@ def _ingest_wsc_daily_station(
             started,
             "failed",
             0,
-            0,
+            UpsertResult(),
             str(exc),
         )
         _log(
@@ -261,7 +286,7 @@ def _ingest_weather_station(
         )
         response.raise_for_status()
         rows = parse_open_meteo(response.json(), station_id, evaluation_time)
-        count = upsert_weather(session, rows, started)
+        stats = upsert_weather(session, rows, started)
         _record_run(
             session,
             "open_meteo",
@@ -269,14 +294,17 @@ def _ingest_weather_station(
             started,
             "success",
             len(rows),
-            count,
+            stats,
         )
         _log(
             "source_complete",
             source="open_meteo",
             station_id=station_id,
             fetched=len(rows),
-            upserted=count,
+            upserted=stats.processed,
+            inserted=stats.inserted,
+            updated=stats.updated,
+            revisions=stats.revisions,
         )
     except Exception as exc:
         session.rollback()
@@ -287,7 +315,7 @@ def _ingest_weather_station(
             started,
             "failed",
             0,
-            0,
+            UpsertResult(),
             str(exc),
         )
         _log(

@@ -80,11 +80,17 @@ class WeatherHour(Base):
 
 class ScoreSnapshot(Base):
     __tablename__ = "score_snapshots"
+    __table_args__ = (
+        UniqueConstraint("station_id", "computed_at_utc", "rules_version"),
+        Index("ix_score_station_time_version", "station_id", "computed_at_utc", "rules_version"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     station_id: Mapped[str] = mapped_column(ForeignKey("stations.id"))
     computed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    hydro_observed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    hydro_observed_at_utc: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(40))
     confidence: Mapped[str] = mapped_column(String(40))
@@ -105,5 +111,8 @@ class IngestRun(Base):
     status: Mapped[str] = mapped_column(String(32))
     fetched_count: Mapped[int] = mapped_column(Integer, default=0)
     upserted_count: Mapped[int] = mapped_column(Integer, default=0)
+    inserted_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_count: Mapped[int] = mapped_column(Integer, default=0)
+    revision_count: Mapped[int] = mapped_column(Integer, default=0)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)

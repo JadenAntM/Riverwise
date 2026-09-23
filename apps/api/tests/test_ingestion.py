@@ -6,7 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ingestion import parse_wsc_csv, parse_wsc_daily_csv, upsert_hydro
-from app.models import HydroObservation
+from app.models import HydroObservation, ScoreSnapshot
+from app.service import persist_score_snapshots
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -64,6 +65,18 @@ def test_additional_verified_station_fixture() -> None:
     ]
 
 
+def test_expanded_verified_station_fixture() -> None:
+    content = (
+        ROOT / "tests" / "fixtures" / "wsc_expanded_stations_sample.csv"
+    ).read_text()
+    rows = parse_wsc_csv(content, {"01EO001", "01EF001", "01ED005"})
+    assert [(row.station_id, row.value) for row in rows] == [
+        ("01EO001", 24.2),
+        ("01EF001", 18.6),
+        ("01ED005", 3.07),
+    ]
+
+
 def test_parser_rejects_unexpected_station() -> None:
     content = (
         "ID,Date,Parameter/Paramètre,Value/Valeur,Qualifier/Qualificatif,"
@@ -78,12 +91,12 @@ def test_upsert_is_idempotent_and_applies_revision(session: Session) -> None:
     first = (
         "ID,Date,Parameter/Paramètre,Value/Valeur,Qualifier/Qualificatif,"
         "Approval/Approbation\n"
-        "01FB001,2026-09-23T16:00:00Z,47,8.10,,Provisional\n"
+        "01FB001,2026-09-23T16:00:00Z,47,8.10,,Provisional/Provisoire\n"
     )
     revised = first.replace("8.10", "8.25")
     ingested_at = datetime(2026, 9, 23, 16, 30, tzinfo=UTC)
-    upsert_hydro(session, parse_wsc_csv(first, {"01FB001"}), ingested_at)
-    upsert_hydro(session, parse_wsc_csv(revised, {"01FB001"}), ingested_at)
+    unchanged = upsert_hydro(session, parse_wsc_csv(first, {"01FB001"}), ingested_at)
+    changed = upsert_hydro(session, parse_wsc_csv(revised, {"01FB001"}), ingested_at)
     count = session.scalar(
         select(func.count())
         .select_from(HydroObservation)
@@ -97,3 +110,16 @@ def test_upsert_is_idempotent_and_applies_revision(session: Session) -> None:
     assert count == 39
     assert observation is not None
     assert observation.value == 8.25
+    assert unchanged.updated == 1
+    assert unchanged.revisions == 0
+    assert changed.updated == 1
+    assert changed.revisions == 1
+
+
+def test_score_snapshot_persistence_is_idempotent(session: Session) -> None:
+    evaluation_time = datetime(2026, 9, 23, 16, 30, tzinfo=UTC)
+    station_ids = ["01FB001", "01FB003", "01FC002", "01EO001", "01EF001", "01ED005"]
+    persist_score_snapshots(session, station_ids, evaluation_time)
+    persist_score_snapshots(session, station_ids, evaluation_time)
+    count = session.scalar(select(func.count()).select_from(ScoreSnapshot))
+    assert count == 12

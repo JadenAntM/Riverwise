@@ -5,8 +5,16 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { FlowChart } from "@/components/FlowChart";
+import { ScoreHistoryChart } from "@/components/ScoreHistoryChart";
 import { StatusPill } from "@/components/StatusPill";
-import { getHistory, getStation, type History, type StationDetail } from "@/lib/api";
+import {
+  getHistory,
+  getScoreHistory,
+  getStation,
+  type History,
+  type ScoreHistory,
+  type StationDetail,
+} from "@/lib/api";
 import { formatAtlantic, formatNumber, formatStationName, sentenceCase } from "@/lib/format";
 
 
@@ -14,6 +22,10 @@ export default function StationPage() {
   const { id } = useParams<{ id: string }>();
   const [station, setStation] = useState<StationDetail | null>(null);
   const [history, setHistory] = useState<History | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistory | null>(null);
+  const [scoreDays, setScoreDays] = useState<7 | 30>(7);
+  const [scoreHistoryLoading, setScoreHistoryLoading] = useState(true);
+  const [scoreHistoryError, setScoreHistoryError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,6 +36,33 @@ export default function StationPage() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "River data could not be loaded."));
   }, [id]);
+
+  useEffect(() => {
+    let active = true;
+    getScoreHistory(id, scoreDays)
+      .then((data) => {
+        if (active) setScoreHistory(data);
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setScoreHistoryError(
+            reason instanceof Error ? reason.message : "Score history could not be loaded.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setScoreHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, scoreDays]);
+
+  function changeScoreDays(nextDays: 7 | 30) {
+    setScoreHistoryLoading(true);
+    setScoreHistoryError(null);
+    setScoreDays(nextDays);
+  }
 
   if (error) {
     return <main className="shell detail-main"><Link className="back-link" href="/">← Station index</Link><div className="error-card" role="alert"><strong>Station unavailable</strong><span>{error}</span></div></main>;
@@ -91,6 +130,23 @@ export default function StationPage() {
         <Metric label="Measured water temperature" value={formatNumber(station.latest_water_temperature?.value ?? null, "°", 1)} unit="Celsius" note={station.latest_water_temperature ? formatAtlantic(station.latest_water_temperature.observed_at_utc) : "Not reported at this gauge"} />
         <Metric label="Seasonal flow position" value={formatNumber(station.seasonal_flow_percentile, "th", 0)} unit="percentile" note={`${station.seasonal_sample_count} daily values · ${station.seasonal_year_count} years`} />
         <Metric label="6-hour change" value={formatNumber(station.six_hour_change_pct, "%")} unit="measured trend" note="No gap interpolation" />
+      </section>
+
+      <section className="chart-card score-history-card">
+        <div className="section-heading compact">
+          <div><p className="section-kicker">Stored after ingestion</p><h2>Experimental score history</h2></div>
+          <p className="section-aside">v1.0 and v1.1 · not catch validation</p>
+        </div>
+        {scoreHistoryError ? (
+          <div className="inline-error" role="alert">{scoreHistoryError}</div>
+        ) : (
+          <ScoreHistoryChart
+            days={scoreDays}
+            history={scoreHistory}
+            loading={scoreHistoryLoading}
+            onDaysChange={changeScoreDays}
+          />
+        )}
       </section>
 
       <section className="chart-card">

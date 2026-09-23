@@ -51,11 +51,11 @@ export default function Home() {
             <div className="eyebrow">Nova Scotia hydrometric data</div>
             <h1>River conditions,<br />station by station.</h1>
             <p className="hero-copy">
-              Check measured discharge at three Cape Breton gauges, compare each reading with its
+              Check measured discharge at six Nova Scotia gauges, compare each reading with its
               station history, and inspect every input behind the experimental score.
             </p>
             <dl className="hero-index" aria-label="Current Riverwise coverage">
-              <div><dt>Coverage</dt><dd>3 verified gauges</dd></div>
+              <div><dt>Coverage</dt><dd>6 verified gauges</dd></div>
               <div><dt>Flow source</dt><dd>Water Survey of Canada</dd></div>
               <div><dt>Time shown</dt><dd>Atlantic</dd></div>
             </dl>

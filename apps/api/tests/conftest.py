@@ -19,6 +19,7 @@ from app.ingestion import (
 )
 from app.main import app
 from app.models import IngestRun
+from app.service import persist_score_snapshots
 
 ROOT = Path(__file__).resolve().parents[3]
 EVALUATION_TIME = datetime(2026, 9, 23, 16, 30, tzinfo=UTC)
@@ -68,10 +69,14 @@ def session() -> Session:
                 status="success",
                 fetched_count=len(hydro) + len(temperature) + len(daily) + len(weather),
                 upserted_count=len(hydro) + len(temperature) + len(daily) + len(weather),
+                inserted_count=len(hydro) + len(temperature) + len(daily) + len(weather),
+                updated_count=0,
+                revision_count=0,
                 duration_ms=10,
             )
         )
         db.commit()
+        persist_score_snapshots(db, [item["id"] for item in stations], EVALUATION_TIME)
         yield db
 
 

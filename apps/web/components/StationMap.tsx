@@ -16,14 +16,14 @@ export function StationMap({ stations }: { stations: StationSummary[] }) {
       <div className="section-heading compact">
         <div>
           <p className="section-kicker">Station locations</p>
-          <h2 id="map-heading">Cape Breton gauges</h2>
+          <h2 id="map-heading">Nova Scotia gauges</h2>
         </div>
         <p className="section-aside">Map is supplementary; every station is listed above.</p>
       </div>
       <div className="map-frame" role="region" aria-label="Interactive map of configured river gauges">
         <MapContainer
           center={[latitude, longitude]}
-          zoom={9}
+          zoom={7}
           scrollWheelZoom={false}
           className="station-map-canvas"
         >

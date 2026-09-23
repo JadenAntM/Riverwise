@@ -31,5 +31,38 @@
     "has_discharge": true,
     "display_order": 3,
     "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FC002"
+  },
+  {
+    "id": "01EO001",
+    "name": "ST. MARYS RIVER AT STILLWATER",
+    "latitude": 45.17417,
+    "longitude": -61.97972,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 4,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01EO001"
+  },
+  {
+    "id": "01EF001",
+    "name": "LAHAVE RIVER AT WEST NORTHFIELD",
+    "latitude": 44.44722,
+    "longitude": -64.59111,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 5,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01EF001"
+  },
+  {
+    "id": "01ED005",
+    "name": "MERSEY RIVER BELOW GEORGE LAKE",
+    "latitude": 44.33306,
+    "longitude": -65.205,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 6,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01ED005"
   }
 ]
