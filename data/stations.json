@@ -1,0 +1,35 @@
+[
+  {
+    "id": "01FB001",
+    "name": "NORTHEAST MARGAREE RIVER AT MARGAREE VALLEY",
+    "latitude": 46.36897,
+    "longitude": -60.97528,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 1,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FB001"
+  },
+  {
+    "id": "01FB003",
+    "name": "SOUTHWEST MARGAREE RIVER NEAR UPPER MARGAREE",
+    "latitude": 46.22311,
+    "longitude": -61.13692,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 2,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FB003"
+  },
+  {
+    "id": "01FC002",
+    "name": "CHETICAMP RIVER ABOVE ROBERT BROOK",
+    "latitude": 46.64158,
+    "longitude": -60.94611,
+    "province": "NS",
+    "active": true,
+    "has_discharge": true,
+    "display_order": 3,
+    "source_url": "https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=01FC002"
+  }
+]
