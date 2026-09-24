@@ -14,4 +14,4 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build:web
 
 EXPOSE 3000
-CMD ["npm", "--workspace", "apps/web", "run", "start"]
+CMD ["sh", "-c", "exec npm --workspace apps/web run start -- --port \"${PORT:-3000}\""]
