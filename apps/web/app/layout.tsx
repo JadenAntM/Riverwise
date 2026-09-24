@@ -34,6 +34,17 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <span className="header-tag">Nova Scotia gauge conditions</span>
               <Link className="status-link" href="/score-lab">Score lab</Link>
               <Link className="status-link" href="/status">Data status</Link>
+              <a
+                aria-label="Riverwise on GitHub (opens in a new tab)"
+                className="header-github-link"
+                href="https://github.com/JadenAntM/Riverwise"
+                rel="noreferrer"
+                target="_blank"
+              >
+                <Image aria-hidden="true" alt="" height={16} src="/github.svg" width={16} />
+                <span className="header-github-label">GitHub</span>
+                <span aria-hidden="true" className="header-github-arrow">↗</span>
+              </a>
             </nav>
           </div>
         </header>

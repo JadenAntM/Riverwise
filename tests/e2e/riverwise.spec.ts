@@ -249,6 +249,13 @@ test("loads station cards and preserves the map's text alternative", async ({ pa
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Available gauges" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View source on GitHub" })).toHaveAttribute(
+    "href",
+    "https://github.com/JadenAntM/Riverwise",
+  );
+  await expect(
+    page.getByRole("link", { name: "Riverwise on GitHub (opens in a new tab)" }),
+  ).toHaveAttribute("href", "https://github.com/JadenAntM/Riverwise");
   await expect(page.locator(".station-card")).toHaveCount(2);
   await expect(page.getByRole("region", { name: "Interactive map of configured river gauges" })).toBeVisible();
 

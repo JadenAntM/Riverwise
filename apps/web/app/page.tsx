@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 import { StationTrace } from "@/components/StationTrace";
@@ -54,6 +55,16 @@ export default function Home() {
               Check measured discharge at six Nova Scotia gauges, compare each reading with its
               station history, and inspect every input behind the experimental score.
             </p>
+            <a
+              className="github-link"
+              href="https://github.com/JadenAntM/Riverwise"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <Image aria-hidden="true" alt="" height={20} src="/github.svg" width={20} />
+              <span>View source on GitHub</span>
+              <span aria-hidden="true" className="github-link-arrow">↗</span>
+            </a>
             <dl className="hero-index" aria-label="Current Riverwise coverage">
               <div><dt>Coverage</dt><dd>6 verified gauges</dd></div>
               <div><dt>Flow source</dt><dd>Water Survey of Canada</dd></div>
