@@ -164,6 +164,10 @@ The Score Lab also runs `v1.1.0-shadow`. It replaces recent flow with a percenti
 
 See the architecture decisions in [`docs/decisions`](docs/decisions) and the full [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
 
+## Deployment
+
+Railway is the selected hosting platform, but production verification is still pending. Follow the [`Railway deployment runbook`](docs/deployment/railway.md) for the API, web app, private PostgreSQL database, hourly ingestion job, cost controls, and computer-off verification. The runbook intentionally leaves public URLs and measured costs blank until they exist.
+
 ## Data and safety notes
 
 - Hydrometric readings may be provisional, late, or revised.
