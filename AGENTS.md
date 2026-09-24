@@ -14,6 +14,8 @@ The Docker `scheduler` imports live WSC and Open-Meteo data immediately on start
 
 Hourly ingestion now persists both rule versions, including unavailable states. `/api/v1/reliability`, `/api/v1/stations/{id}/score-history`, `/status`, and station details expose seven- and 30-day measured history. Revision tracking is prospective from its rollout and is not retroactive. The next reliability task is to let these records accumulate and document a real observation window; do not claim improved accuracy without outcome data. A private trip log was explicitly excluded from this iteration. Device-local favourites are still an available next product decision. Alerts remain later because they require choices about identity, notification channel, thresholds, consent, cost, and delivery infrastructure.
 
+Railway is selected for the first hosted deployment. The compatibility work and exact service setup are documented in `docs/deployment/railway.md` and ADR 0005. Production verification, public URLs, backup details, computer-off ingestion evidence, and measured hosting cost remain pending and must not be represented as complete before they are observed.
+
 ## Non-negotiable product rules
 
 - Call the output an **experimental conditions score**, never a bite probability or catch prediction.
