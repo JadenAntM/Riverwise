@@ -8,7 +8,7 @@ The score is not a prediction of catches, river safety, fish abundance, habitat 
 
 ## Why I built Riverwise
 
-I am an avid fly angler, and the Margaree River is one of my favourite places to fish—but it is about a three-and-a-half-hour drive from home. Deciding whether to make that trip often meant piecing together river flow and nearby weather from several technical sources. Riverwise grew from wanting one mobile-friendly view of the available conditions while keeping the source, age, and uncertainty of the data visible. It provides context for planning a trip without pretending to predict whether the fish will bite.
+I am an avid fly angler, and the Margaree River is one of my favourite places to fish, but it is about a 3.5 drive from my house. Deciding whether to make that trip often meant piecing together river flow and nearby weather from several hard to find sources. Riverwise grew from wanting one mobile-friendly view of the available conditions while keeping the source, age, and uncertainty of the data visible. It provides context for planning a trip without pretending to predict whether the fish will bite.
 
 <img src="docs/images/margaree-inspiration.jpg" alt="A brook trout held above the Margaree River beside a fly rod under cloudy skies" width="520">
 
