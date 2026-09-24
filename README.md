@@ -6,6 +6,14 @@ The score is not a prediction of catches, river safety, fish abundance, habitat 
 
 [View the live dashboard](https://web-production-4762c.up.railway.app) · [Check API health](https://api-production-f376.up.railway.app/health)
 
+## Why I built Riverwise
+
+I am an avid fly angler, and the Margaree River is one of my favourite places to fish—but it is about a three-and-a-half-hour drive from home. Deciding whether to make that trip often meant piecing together river flow and nearby weather from several technical sources. Riverwise grew from wanting one mobile-friendly view of the available conditions while keeping the source, age, and uncertainty of the data visible. It provides context for planning a trip without pretending to predict whether the fish will bite.
+
+<img src="docs/images/margaree-inspiration.jpg" alt="A brook trout held above the Margaree River beside a fly rod under cloudy skies" width="520">
+
+*Fly fishing on the Margaree River—the trip that inspired Riverwise.*
+
 ## Current status
 
 The deployed data product runs across six verified Water Survey of Canada gauges:
