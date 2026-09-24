@@ -4,9 +4,11 @@ Riverwise is a mobile-friendly Nova Scotia river-conditions dashboard. The MVP c
 
 The score is not a prediction of catches, river safety, fish abundance, habitat quality, or legal fishing eligibility.
 
+[View the live dashboard](https://web-production-4762c.up.railway.app) · [Check API health](https://api-production-f376.up.railway.app/health)
+
 ## Current status
 
-The complete local data product now runs across six verified Water Survey of Canada gauges:
+The deployed data product runs across six verified Water Survey of Canada gauges:
 
 - `01FB001` — **NORTHEAST MARGAREE RIVER AT MARGAREE VALLEY**
 - `01FB003` — **SOUTHWEST MARGAREE RIVER NEAR UPPER MARGAREE**
@@ -16,6 +18,8 @@ The complete local data product now runs across six verified Water Survey of Can
 - `01ED005` — **MERSEY RIVER BELOW GEORGE LAKE**
 
 On 2026-09-23, all six official recent-data feeds returned current parameter 47 discharge and completed a live ingestion run successfully. The three province-wide additions also returned 3,388–3,478 daily observations in the bounded ten-year backfill.
+
+The first hosted ingestion completed successfully on 2026-09-24. The public API reported a healthy PostgreSQL connection and current readings for all six gauges. Hourly cloud scheduling is enabled; the multi-cycle computer-off verification remains in progress.
 
 Implemented:
 
@@ -166,7 +170,18 @@ See the architecture decisions in [`docs/decisions`](docs/decisions) and the ful
 
 ## Deployment
 
-Railway is the selected hosting platform, but production verification is still pending. Follow the [`Railway deployment runbook`](docs/deployment/railway.md) for the API, web app, private PostgreSQL database, hourly ingestion job, cost controls, and computer-off verification. The runbook intentionally leaves public URLs and measured costs blank until they exist.
+Riverwise is deployed on Railway as four services:
+
+- A private PostgreSQL database.
+- A public FastAPI service with migrations and a health check.
+- A public Next.js web application.
+- A one-shot ingestion service scheduled for ten minutes past every UTC hour.
+
+The live application is available at [web-production-4762c.up.railway.app](https://web-production-4762c.up.railway.app). Deployment uses the same Dockerfiles exercised locally and in CI. The hosted ingestion command exits after each run rather than keeping a scheduler container active.
+
+Railway-native database backups are unavailable on the selected Trial/Hobby tier. This is an accepted limitation while Riverwise stores reproducible public-provider data and no user-generated records. Migrations and provider ingestion can rebuild the application dataset, although accumulated score and reliability history could be lost. Backups must be reconsidered before storing irreplaceable user data.
+
+Follow the [`Railway deployment runbook`](docs/deployment/railway.md) for configuration, cost controls, computer-off verification, and rollback. ADR 0005 records the hosting decision and remaining production evidence.
 
 ## Data and safety notes
 
