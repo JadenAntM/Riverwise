@@ -11,3 +11,5 @@ __pycache__/
 *.tsbuildinfo
 coverage.xml
 htmlcov/
+playwright-report/
+test-results/

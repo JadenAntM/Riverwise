@@ -48,6 +48,7 @@ Implemented:
 - Hourly ingestion scheduler with source- and station-level run monitoring.
 - Accessible station map supplemented by an equivalent text station list.
 - Automated backend boundary/integration tests, frontend lint/type/build checks, and CI.
+- Playwright browser journeys for station loading, detail navigation, charts, status reporting, the map's text alternative, and API error states.
 
 ## Architecture
 
@@ -121,6 +122,8 @@ cd apps/api
 ../../.venv/bin/pytest -q
 cd ../..
 npm run verify
+npx playwright install chromium
+npm run test:e2e
 docker compose config --quiet
 ```
 

@@ -11,7 +11,11 @@
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",
+    "test:e2e": "playwright test",
     "typecheck:web": "npm --workspace apps/web run typecheck",
     "verify": "npm run lint:web && npm run typecheck:web && npm run build:web"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }
