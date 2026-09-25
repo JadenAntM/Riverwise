@@ -6,7 +6,7 @@ Accepted; production verification is pending.
 
 ## Context
 
-Riverwise needs hosted PostgreSQL, two containerized applications, hourly ingestion that continues when the developer computer is off, HTTPS portfolio URLs, logs, and cost controls. The existing repository is a monorepo whose images require the repository root as their Docker build context. Deployment claims must be based on observed operation and cost rather than assumptions.
+Riverwise needs hosted PostgreSQL, two containerized applications, recurring ingestion that continues when the developer computer is off, HTTPS portfolio URLs, logs, and cost controls. The existing repository is a monorepo whose images require the repository root as their Docker build context. Deployment claims must be based on observed operation and cost rather than assumptions.
 
 ## Decision
 
@@ -15,7 +15,7 @@ Use one Railway project with four services:
 - A private managed PostgreSQL database.
 - A persistent FastAPI service built from `/apps/api/Dockerfile`.
 - A persistent Next.js service built from `/apps/web/Dockerfile`.
-- A scheduled service built from the API image that runs `python /workspace/jobs/ingest/ingest.py --source live` at `10 * * * *` UTC and exits.
+- A scheduled service built from the API image that runs `python /workspace/jobs/ingest/ingest.py --source live` at `*/30 * * * *` UTC and exits. The 30-minute polling cadence reduces the delay between a newly published WSC observation and Riverwise's next successful import without implying that WSC publishes every 30 minutes.
 
 Use Railway reference variables for the private database URL, public HTTPS domains for the API and web app, an exact web-origin CORS allowlist, and GitHub `main` autodeploys that wait for CI when the feature is available. Keep the local Docker Compose scheduler for local development; Railway cron replaces it only in the hosted environment.
 
@@ -30,7 +30,7 @@ Configure a usage alert and hard spending limit before application deployment. E
 
 ## Consequences
 
-The deployment stays close to the locally verified containers and has one operational surface. The hourly process consumes resources only while ingesting. Railway becomes a platform dependency, cron timing is not exact, and overlapping runs are skipped if a prior job does not terminate. The web API URL is a build-time variable, so URL changes require a frontend rebuild. Application rollback does not automatically reverse database changes.
+The deployment stays close to the locally verified containers and has one operational surface. The scheduled process consumes resources only while ingesting. Railway becomes a platform dependency, cron timing is not exact, and overlapping runs are skipped if a prior job does not terminate. The web API URL is a build-time variable, so URL changes require a frontend rebuild. Application rollback does not automatically reverse database changes.
 
 ## Production evidence
 
@@ -51,4 +51,3 @@ Last known-good rollback deployment:
 ```
 
 The operational procedure and verification checklist are in [`docs/deployment/railway.md`](../deployment/railway.md).
-

@@ -63,7 +63,7 @@ export default function StatusPage() {
         <div>
           <p className="eyebrow">Ingestion monitoring</p>
           <h1>Data status</h1>
-          <p>Riverwise imports each station and provider independently on an hourly schedule.</p>
+          <p>Riverwise imports each station and provider independently every 30 minutes.</p>
         </div>
         <button className="refresh-button" type="button" onClick={refresh} disabled={loading}>
           {loading ? "Checking…" : "Refresh status"}

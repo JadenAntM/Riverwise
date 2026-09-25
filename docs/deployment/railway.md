@@ -1,6 +1,6 @@
 # Railway deployment runbook
 
-This runbook deploys Riverwise as four Railway services: PostgreSQL, the FastAPI API, the Next.js web app, and a one-shot hourly ingestion job. It deliberately keeps the repository root as the Docker build context because both application images copy files from more than one top-level directory.
+This runbook deploys Riverwise as four Railway services: PostgreSQL, the FastAPI API, the Next.js web app, and a one-shot ingestion job that runs every 30 minutes. It deliberately keeps the repository root as the Docker build context because both application images copy files from more than one top-level directory.
 
 ## Before connecting GitHub
 
@@ -82,7 +82,7 @@ WEB_URL=________________________________________
 
 Return to the `api` variables, set `API_CORS_ORIGINS` to the exact `WEB_URL`, and redeploy the API. Then confirm the public web app can load its station data.
 
-## 4. Add hourly ingestion
+## 4. Add 30-minute ingestion
 
 Create an empty service named `ingest-hourly`. It must not have a public domain.
 
@@ -103,7 +103,7 @@ Create an empty service named `ingest-hourly`. It must not have a public domain.
 4. Set the cron schedule to:
 
    ```text
-   10 * * * *
+   */30 * * * *
    ```
 
 Railway evaluates cron schedules in UTC and can start them a few minutes late. This command performs one ingestion and exits; do not run `scheduler.py` as the Railway start command. If a previous execution is still active at the next scheduled time, Railway skips the overlapping run.
@@ -136,4 +136,3 @@ Then test independence from the development computer:
 ## Rollback
 
 For an application regression, open the affected Railway service's deployment history and redeploy the last known-good commit. For a schema or data incident, stop `ingest-hourly` first, preserve logs, and assess database restoration before redeploying application code. Never assume an application rollback reverses a database migration or provider data revision.
-

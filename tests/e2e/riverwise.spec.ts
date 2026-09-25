@@ -274,7 +274,9 @@ test("opens a station detail and renders both chart regions", async ({ page }) =
   await expect(
     page.getByRole("heading", { name: "Northeast Margaree River at Margaree Valley" }),
   ).toBeVisible();
-  await expect(page.getByLabel("7-day experimental score history chart")).toBeVisible();
+  const scoreHistory = page.getByLabel("7-day experimental score history chart");
+  await expect(scoreHistory).toBeVisible();
+  await expect(scoreHistory.locator(".recharts-line-dots .recharts-dot")).toHaveCount(0);
   await expect(page.getByLabel("48-hour measured discharge chart")).toBeVisible();
   await expect(page.getByText("v1.1 shadow").first()).toBeVisible();
 });
@@ -284,6 +286,7 @@ test("shows ingestion coverage and provider reliability", async ({ page }) => {
   await page.goto("/status");
 
   await expect(page.getByRole("heading", { name: "Data status" })).toBeVisible();
+  await expect(page.getByText("every 30 minutes")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Station coverage" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Provider reliability" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "100.0%" })).toBeVisible();

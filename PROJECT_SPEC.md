@@ -53,7 +53,7 @@ Before implementation assumptions are finalized, record:
 - `jobs/ingest`: Python with HTTP timeouts, bounded retries, and typed parsing. Separate extraction, validation, normalization, persistence, and scoring. Pandas is optional for future batch history.
 - PostgreSQL with migrations. Docker Compose runs the web application, API, and database locally. Include a one-shot import command and seed script.
 
-**Deployment comes after local verification.** Make ingestion callable by an hourly scheduler. EventBridge/Lambda and a hosted database are optional later choices, subject to networking requirements and a measured cost estimate. Do not promise $0 hosting. Configure budget alerts before provisioning paid cloud resources.
+**Deployment comes after local verification.** Make ingestion callable by a recurring scheduler. EventBridge/Lambda and a hosted database are optional later choices, subject to networking requirements and a measured cost estimate. Do not promise $0 hosting. Configure budget alerts before provisioning paid cloud resources.
 
 ## Smallest vertical slice
 
@@ -87,7 +87,7 @@ Index hydro on (station_id, parameter, observed_at_utc DESC) and weather on (sta
 6. Percentage change is unavailable when the earlier value is zero or below a documented small-positive guard value. Never divide by zero or report an unbounded percentage as a normal trend.
 7. Handle one failed provider independently of another. Preserve previous observations, record source errors, and expose the last successful ingestion separately from the last measured reading.
 
-An hourly job is not an hourly measurement guarantee: [WSC’s service standard](https://www.canada.ca/en/environment-climate-change/services/meteorological-service-standards/publications/hydrometric-data-information/chapter-3.html) allows near-real-time data to appear within two hours of observation.
+A recurring ingestion job is not a measurement-frequency or freshness guarantee: [WSC’s service standard](https://www.canada.ca/en/environment-climate-change/services/meteorological-service-standards/publications/hydrometric-data-information/chapter-3.html) allows near-real-time data to appear within two hours of observation.
 
 ## Score v1
 

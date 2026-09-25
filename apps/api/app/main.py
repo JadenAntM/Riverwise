@@ -133,7 +133,7 @@ def ingestion_status(session: Session = Depends(get_db)) -> IngestionStatusOut:
     overview = ingestion_overview(session, now)
     return IngestionStatusOut(
         generated_at_utc=now,
-        schedule="hourly",
+        schedule="every 30 minutes",
         sources=overview["sources"],
         stations=overview["stations"],
     )

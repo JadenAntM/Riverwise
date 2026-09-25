@@ -70,7 +70,7 @@ export function ScoreHistoryChart({
         <div className="chart-empty" role="status">Loading stored score history…</div>
       ) : points.length === 0 ? (
         <div className="chart-empty">
-          No score snapshots are stored in this window yet. History starts with the next hourly import.
+          No score snapshots are stored in this window yet. History starts with the next scheduled import.
         </div>
       ) : (
         <div className="chart-wrap" aria-label={`${days}-day experimental score history chart`}>
@@ -106,7 +106,8 @@ export function ScoreHistoryChart({
                 dataKey="current"
                 stroke="#1f6b4f"
                 strokeWidth={3}
-                dot={{ r: 3, fill: "#1f6b4f" }}
+                dot={false}
+                activeDot={{ r: 5, fill: "#1f6b4f", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls={false}
               />
               <Line
@@ -115,7 +116,8 @@ export function ScoreHistoryChart({
                 stroke="#d88039"
                 strokeWidth={3}
                 strokeDasharray="6 4"
-                dot={{ r: 3, fill: "#d88039" }}
+                dot={false}
+                activeDot={{ r: 5, fill: "#d88039", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls={false}
               />
             </LineChart>
@@ -128,7 +130,7 @@ export function ScoreHistoryChart({
         <HistorySummary label="v1.1 shadow" summary={candidate} />
       </div>
       <p className="chart-note">
-        One snapshot is stored after each hourly import. Missing points preserve stale or unavailable
+        One snapshot is stored after each scheduled import. Missing points preserve stale or unavailable
         score states instead of drawing a continuous value.
       </p>
     </>

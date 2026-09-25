@@ -43,7 +43,7 @@ def test_ingestion_status_reports_sources_and_station_freshness(client: TestClie
     response = client.get("/api/v1/ingestion")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schedule"] == "hourly"
+    assert payload["schedule"] == "every 30 minutes"
     assert len(payload["stations"]) == 6
     assert payload["sources"][0]["source"] == "offline_fixtures"
     assert payload["sources"][0]["station_id"] == "01FB001"

@@ -27,7 +27,7 @@ The deployed data product runs across six verified Water Survey of Canada gauges
 
 On 2026-09-23, all six official recent-data feeds returned current parameter 47 discharge and completed a live ingestion run successfully. The three province-wide additions also returned 3,388–3,478 daily observations in the bounded ten-year backfill.
 
-The first hosted ingestion completed successfully on 2026-09-24. The public API reported a healthy PostgreSQL connection and current readings for all six gauges. Hourly cloud scheduling is enabled; the multi-cycle computer-off verification remains in progress.
+The first hosted ingestion completed successfully on 2026-09-24. The public API reported a healthy PostgreSQL connection and current readings for all six gauges. Thirty-minute cloud scheduling is enabled; the multi-cycle computer-off verification remains in progress.
 
 Implemented:
 
@@ -40,12 +40,12 @@ Implemented:
 - Offline fixture import and live provider import with bounded timeout/retries and independent failure recording.
 - Pure versioned scoring with explicit evaluation time.
 - A `v1.1.0-shadow` candidate score and side-by-side Score Lab; `v1.0.0` remains the dashboard score.
-- Idempotent hourly snapshots for both score versions, including partial, stale, and unavailable states.
+- Idempotent scheduled snapshots for both score versions, including partial, stale, and unavailable states.
 - Seven- and 30-day score-history charts on each station page.
 - Measured reliability reporting for provider success, data freshness, temperature coverage, observation counts, historical depth, and changed provider values.
 - Station list, detail, 48-hour history, and ingestion-status API endpoints.
 - Responsive station list/detail interface with visible data gaps and provenance.
-- Hourly ingestion scheduler with source- and station-level run monitoring.
+- Recurring ingestion with source- and station-level run monitoring.
 - Accessible station map supplemented by an equivalent text station list.
 - Automated backend boundary/integration tests, frontend lint/type/build checks, and CI.
 - Playwright browser journeys for station loading, detail navigation, charts, status reporting, the map's text alternative, and API error states.
@@ -186,7 +186,7 @@ Riverwise is deployed on Railway as four services:
 - A private PostgreSQL database.
 - A public FastAPI service with migrations and a health check.
 - A public Next.js web application.
-- A one-shot ingestion service scheduled for ten minutes past every UTC hour.
+- A one-shot ingestion service scheduled every 30 minutes in UTC.
 
 The live application is available at [web-production-4762c.up.railway.app](https://web-production-4762c.up.railway.app). Deployment uses the same Dockerfiles exercised locally and in CI. The hosted ingestion command exits after each run rather than keeping a scheduler container active.
 
