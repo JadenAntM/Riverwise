@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import logging
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -26,13 +25,16 @@ from app.ingestion import (  # noqa: E402
 from app.models import HydroObservation, IngestRun  # noqa: E402
 from app.service import persist_score_snapshots  # noqa: E402
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger("riverwise.ingest")
-
-
 def _log(event: str, **fields: object) -> None:
-    logger.info(
-        json.dumps({"event": event, **fields}, default=str, separators=(",", ":"))
+    failed = event.endswith("_failed")
+    print(
+        json.dumps(
+            {"level": "error" if failed else "info", "event": event, **fields},
+            default=str,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr if failed else sys.stdout,
+        flush=True,
     )
 
 
