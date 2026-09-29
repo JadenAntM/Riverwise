@@ -27,7 +27,7 @@ Leave **Root Directory** blank for all Riverwise services. Setting it to `/apps/
 
 1. Name the database service `Postgres` if it has another temporary name.
 2. Leave public networking disabled.
-3. Open its backup settings and enable the best available schedule for the selected plan. Record the schedule in the deployment ADR after confirming it in the UI.
+3. Open its Backups tab and record whether a native schedule is available on the selected plan. If it is available, enable the best suitable schedule and record its retention in the deployment ADR. Use the independent [logical export and restore procedure](postgres-backups.md) in either case.
 4. Do not copy database credentials into source control or this document.
 
 ## 2. Deploy the API
@@ -115,7 +115,7 @@ Manually run `ingest-hourly` once, then verify:
 - The job exits successfully rather than remaining active.
 - `API_URL/health` reports a healthy database and a current ingestion timestamp.
 - `WEB_URL/status` lists all six stations.
-- The run produces twelve current score snapshots: six stations times two score versions.
+- The run produces eighteen current score snapshots: six stations times three score versions, with `v1.0.0` still the dashboard score.
 - Provider failures, if present, are isolated and visible rather than erasing prior observations.
 
 Then test independence from the development computer:
@@ -132,6 +132,8 @@ Then test independence from the development computer:
 - Record the deployed commit SHA, date, URLs, backup schedule, alert threshold, hard limit, and independence-test evidence in the ADR.
 - After seven days, record measured Railway usage and projected monthly cost. Do not describe trial credit as a permanent hosting cost.
 - Before the trial ends, decide whether to move to the paid plan or pause the deployment. Confirm the selected plan still supports all four services and cron jobs.
+
+The [PostgreSQL backup runbook](postgres-backups.md) describes the temporary manual export and local restore drill. Keep the dated restore evidence in ADR 0005. Count seven consecutive days from the first stored production snapshot, and distinguish source-attempt success from availability of the public web and API services.
 
 ## Rollback
 

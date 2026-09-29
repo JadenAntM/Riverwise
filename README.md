@@ -27,7 +27,7 @@ The deployed data product runs across six verified Water Survey of Canada gauges
 
 On 2026-09-23, all six official recent-data feeds returned current parameter 47 discharge and completed a live ingestion run successfully. The three province-wide additions also returned 3,388–3,478 daily observations in the bounded ten-year backfill.
 
-The first hosted ingestion completed successfully on 2026-09-24. The public API reported a healthy PostgreSQL connection and current readings for all six gauges. Thirty-minute cloud scheduling is enabled; the multi-cycle computer-off verification remains in progress.
+The first hosted ingestion completed successfully on 2026-09-24. Thirty-minute cloud scheduling is enabled. As of 2026-09-29, the public API reports recent discharge and ongoing score snapshots for all six gauges. The user has observed ingestion continuing while their computer was off; dated before/after evidence and the full seven-day reliability window are still being documented in [ADR 0005](docs/decisions/0005-railway-deployment.md).
 
 Implemented:
 
@@ -39,8 +39,8 @@ Implemented:
 - Idempotent observation updates, including revised upstream values.
 - Offline fixture import and live provider import with bounded timeout/retries and independent failure recording.
 - Pure versioned scoring with explicit evaluation time.
-- A `v1.1.0-shadow` candidate score and side-by-side Score Lab; `v1.0.0` remains the dashboard score.
-- Idempotent scheduled snapshots for both score versions, including partial, stale, and unavailable states.
+- `v1.1.0-shadow` and provisional `v1.2.0-shadow` comparisons in the Score Lab; `v1.0.0` remains the dashboard score.
+- Idempotent scheduled snapshots for all three score versions, including partial, stale, and unavailable states. New snapshots persist their direct scoring inputs and point-level explanations.
 - Seven- and 30-day score-history charts on each station page.
 - Measured reliability reporting for provider success, data freshness, temperature coverage, observation counts, historical depth, and changed provider values.
 - Station list, detail, 48-hour history, and ingestion-status API endpoints.
@@ -177,6 +177,10 @@ Rules live in `apps/api/app/scoring.py`. The production dashboard still uses `v1
 
 The Score Lab also runs `v1.1.0-shadow`. It replaces recent flow with a percentile against prior years within ±7 calendar days, scores absolute six-hour stability, and uses measured water temperature when available. A seasonal baseline requires at least 21 daily values across at least three previous years. Missing water temperature produces a visibly partial score rather than substituting nearby air temperature. This candidate is an inspectable hypothesis, not evidence of better catch prediction.
 
+The `v1.2.0-shadow` experiment adds a station-month flow percentile, 1- and 6-hour trends, complete 6/24/72-hour modeled precipitation windows, and a station-specific rapid-rise penalty. It shows 24-hour flow change, approximate sunrise/sunset, and nearby modeled pressure trend as unscored context. [ADR 0006](docs/decisions/0006-v1-2-shadow-conditions-model.md) records every provisional band, data-coverage rule, a measured three-version replay, and the limits of that comparison. The user has no trip outcomes this season; **none of these versions has demonstrated greater fishing accuracy**. Verify the Railway commit SHA before treating the shadow rollout as live.
+
+For a read-only comparison against a separate local PostgreSQL restore, set `DATABASE_URL` to that **local** database and run `.venv/bin/python scripts/analyze_score_models.py --max-times 36`. The script refuses a non-local database host and prints JSON with availability and score differences; it does not evaluate catch outcomes.
+
 See the architecture decisions in [`docs/decisions`](docs/decisions) and the full [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
 
 ## Deployment
@@ -188,9 +192,9 @@ Riverwise is deployed on Railway as four services:
 - A public Next.js web application.
 - A one-shot ingestion service scheduled every 30 minutes in UTC.
 
-The live application is available at [web-production-4762c.up.railway.app](https://web-production-4762c.up.railway.app). Deployment uses the same Dockerfiles exercised locally and in CI. The hosted ingestion command exits after each run rather than keeping a scheduler container active.
+The live application is available at [web-production-4762c.up.railway.app](https://web-production-4762c.up.railway.app). The API and hosted ingestion use Docker builds, while Railway currently reports a Railpack build for the web service; see ADR 0005 for this deployment deviation. The hosted ingestion command exits after each run rather than keeping a scheduler container active.
 
-Railway-native database backups are unavailable on the selected Trial/Hobby tier. This is an accepted limitation while Riverwise stores reproducible public-provider data and no user-generated records. Migrations and provider ingestion can rebuild the application dataset, although accumulated score and reliability history could be lost. Backups must be reconsidered before storing irreplaceable user data.
+The Postgres Backups tab requires Railway Pro for native backups on the current Trial plan, as confirmed by the user on 2026-09-29. A [manual PostgreSQL export and local restore drill](docs/deployment/postgres-backups.md) succeeded that day. Keep a second encrypted copy outside the laptop; provider ingestion can rebuild observations, but it cannot recreate the exact accumulated score and reliability history.
 
 Follow the [`Railway deployment runbook`](docs/deployment/railway.md) for configuration, cost controls, computer-off verification, and rollback. ADR 0005 records the hosting decision and remaining production evidence.
 

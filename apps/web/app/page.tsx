@@ -9,6 +9,7 @@ import { StationTrace } from "@/components/StationTrace";
 import { StatusPill } from "@/components/StatusPill";
 import {
   getHistory,
+  getIngestionStatus,
   getStations,
   type History,
   type StationSummary,
@@ -25,10 +26,24 @@ const StationMap = dynamic(
 export default function Home() {
   const [stations, setStations] = useState<StationSummary[]>([]);
   const [heroHistory, setHeroHistory] = useState<History | null>(null);
+  const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    getIngestionStatus()
+      .then((status) => {
+        const successfulRuns = status.sources
+          .map((source) => source.last_success_at_utc)
+          .filter((value): value is string => value !== null);
+        setLastSuccessfulUpdate(
+          successfulRuns.length > 0
+            ? successfulRuns.reduce((latest, value) => Date.parse(value) > Date.parse(latest) ? value : latest)
+            : null,
+        );
+      })
+      .catch(() => setLastSuccessfulUpdate(null));
+
     getStations()
       .then(async (stationData) => {
         setStations(stationData);
@@ -70,6 +85,14 @@ export default function Home() {
               <div><dt>Flow source</dt><dd>Water Survey of Canada</dd></div>
               <div><dt>Time shown</dt><dd>Atlantic</dd></div>
             </dl>
+            <p className="hero-update">
+              Last successful provider update: {lastSuccessfulUpdate === undefined
+                ? "Checking…"
+                : lastSuccessfulUpdate === null
+                  ? "Unavailable"
+                  : formatAtlantic(lastSuccessfulUpdate)}
+              {" · "}<Link href="/status">See provider and station status</Link>
+            </p>
           </div>
           <HeroReading station={stations[0]} history={heroHistory} loading={loading} />
         </div>

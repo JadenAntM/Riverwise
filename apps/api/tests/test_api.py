@@ -1,4 +1,12 @@
+from datetime import datetime, timedelta
+
+from conftest import EVALUATION_TIME
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.models import IngestRun
+from app.scoring import ExperimentScoreInput, calculate_experiment_score
+from app.service import ingestion_overview
 
 
 def test_station_vertical_slice(client: TestClient) -> None:
@@ -49,7 +57,31 @@ def test_ingestion_status_reports_sources_and_station_freshness(client: TestClie
     assert payload["sources"][0]["station_id"] == "01FB001"
 
 
-def test_score_comparison_keeps_current_and_candidate_versions(client: TestClient) -> None:
+def test_ingestion_status_keeps_last_success_after_many_failures(session: Session) -> None:
+    session.add_all(
+        IngestRun(
+            started_at_utc=EVALUATION_TIME + timedelta(minutes=minute),
+            ended_at_utc=EVALUATION_TIME + timedelta(minutes=minute),
+            source="offline_fixtures",
+            station_id="01FB001",
+            status="failed",
+            fetched_count=0,
+            upserted_count=0,
+            inserted_count=0,
+            updated_count=0,
+            revision_count=0,
+        )
+        for minute in range(1, 261)
+    )
+    session.commit()
+
+    overview = ingestion_overview(session, EVALUATION_TIME + timedelta(minutes=261))
+    run = next(row for row in overview["sources"] if row["source"] == "offline_fixtures")
+    assert run["status"] == "failed"
+    assert run["last_success_at_utc"] == EVALUATION_TIME
+
+
+def test_score_comparison_keeps_current_and_shadow_versions(client: TestClient) -> None:
     response = client.get("/api/v1/scores/compare")
     assert response.status_code == 200
     payload = response.json()
@@ -58,6 +90,9 @@ def test_score_comparison_keeps_current_and_candidate_versions(client: TestClien
     assert first["station_id"] == "01FB001"
     assert first["current_score"]["rules_version"] == "v1.0.0"
     assert first["candidate_score"]["rules_version"] == "v1.1.0-shadow"
+    assert first["experiment_score"]["rules_version"] == "v1.2.0-shadow"
+    assert "sunrise_at_utc" in first["experiment_context"]
+    assert "pressure_change_6h_hpa" in first["experiment_context"]
     assert first["latest_water_temperature"]["unit"] == "°C"
 
 
@@ -71,17 +106,28 @@ def test_score_history_returns_both_versions_and_validates_window(
     assert {row["rules_version"] for row in payload["snapshots"]} == {
         "v1.0.0",
         "v1.1.0-shadow",
+        "v1.2.0-shadow",
     }
+    assert all("inputs" in row and "components" in row for row in payload["snapshots"])
+    experiment = next(
+        row for row in payload["snapshots"] if row["rules_version"] == "v1.2.0-shadow"
+    )
+    assert experiment["inputs"]["evaluation_time"] == EVALUATION_TIME.isoformat()
+    assert "precipitation_72h_mm" in experiment["inputs"]
+    replay_inputs = experiment["inputs"].copy()
+    for key in ("evaluation_time", "latest_observed_at", "water_temperature_observed_at"):
+        if replay_inputs[key] is not None:
+            replay_inputs[key] = datetime.fromisoformat(replay_inputs[key])
+    replayed = calculate_experiment_score(ExperimentScoreInput(**replay_inputs))
+    assert replayed.score == experiment["value"]
+    assert [item.__dict__ for item in replayed.components] == experiment["components"]
     assert all(row["status"] == "available" for row in payload["snapshots"])
 
     unavailable = client.get("/api/v1/stations/01EO001/score-history?days=7")
     assert unavailable.status_code == 200
     assert all(row["value"] is None for row in unavailable.json()["snapshots"])
     assert all(row["confidence"] == "unavailable" for row in unavailable.json()["snapshots"])
-    assert all(
-        row["hydro_observed_at_utc"] is None
-        for row in unavailable.json()["snapshots"]
-    )
+    assert all(row["hydro_observed_at_utc"] is None for row in unavailable.json()["snapshots"])
     assert client.get("/api/v1/stations/01FB001/score-history?days=14").status_code == 422
 
 

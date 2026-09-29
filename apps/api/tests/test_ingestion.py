@@ -122,4 +122,4 @@ def test_score_snapshot_persistence_is_idempotent(session: Session) -> None:
     persist_score_snapshots(session, station_ids, evaluation_time)
     persist_score_snapshots(session, station_ids, evaluation_time)
     count = session.scalar(select(func.count()).select_from(ScoreSnapshot))
-    assert count == 12
+    assert count == 18

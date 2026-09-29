@@ -22,9 +22,15 @@ from .schemas import (
     StationSummary,
     WeatherOut,
 )
-from .scoring import CANDIDATE_RULES_VERSION, RULES_VERSION, ScoreResult
+from .scoring import (
+    CANDIDATE_RULES_VERSION,
+    EXPERIMENT_RULES_VERSION,
+    RULES_VERSION,
+    ScoreResult,
+)
 from .service import (
     candidate_score_station,
+    experiment_score_station,
     hydro_for_station,
     ingestion_overview,
     last_ingest,
@@ -168,6 +174,9 @@ def compare_scores(session: Session = Depends(get_db)) -> list[ScoreComparisonOu
         candidate, context = candidate_score_station(
             session, station.id, now, base_context
         )
+        experiment, experiment_context = experiment_score_station(
+            session, station, now, base_context, context
+        )
         latest = context.get("latest")
         temperature = context.get("latest_water_temperature")
         rows.append(
@@ -176,6 +185,8 @@ def compare_scores(session: Session = Depends(get_db)) -> list[ScoreComparisonOu
                 station_name=station.name,
                 current_score=_score_out(current),
                 candidate_score=_score_out(candidate, CANDIDATE_RULES_VERSION),
+                experiment_score=_score_out(experiment, EXPERIMENT_RULES_VERSION),
+                experiment_context=experiment_context,
                 latest_flow=ObservationOut.model_validate(latest) if latest else None,
                 latest_water_temperature=(
                     ObservationOut.model_validate(temperature) if temperature else None
@@ -271,6 +282,9 @@ def station_score_history(
                 available_points=snapshot.available_points,
                 earned_points=snapshot.earned_points,
                 rules_version=snapshot.rules_version,
+                components=snapshot.components_json.get("components", []),
+                inputs=snapshot.components_json.get("inputs"),
+                context=snapshot.components_json.get("context"),
             )
             for snapshot in snapshots
         ],

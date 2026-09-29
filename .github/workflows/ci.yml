@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: apps/api/requirements.txt
       - run: pip install -r apps/api/requirements.txt
       - name: Lint API and ingestion
-        run: ruff check apps/api jobs/ingest
+        run: ruff check apps/api jobs/ingest scripts
       - name: Test API
         working-directory: apps/api
         run: pytest -q

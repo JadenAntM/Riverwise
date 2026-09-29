@@ -63,6 +63,25 @@ export type ScoreComparison = {
   station_name: string;
   current_score: Score;
   candidate_score: Score;
+  experiment_score?: Score;
+  experiment_context?: {
+    monthly_sample_count: number;
+    monthly_year_count: number;
+    pressure_hpa: number | null;
+    pressure_change_6h_hpa: number | null;
+    sunrise_at_utc: string;
+    sunset_at_utc: string;
+    is_daylight: boolean;
+    daylight_minutes: number;
+    scoring_inputs: {
+      one_hour_change_pct: number | null;
+      twenty_four_hour_change_pct: number | null;
+      precipitation_6h_mm: number | null;
+      precipitation_24h_mm: number | null;
+      precipitation_72h_mm: number | null;
+      rapid_rise_threshold_pct: number | null;
+    } | null;
+  };
   latest_flow: Observation | null;
   latest_water_temperature: Observation | null;
   seasonal_flow_percentile: number | null;

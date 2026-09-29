@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from statistics import median
 
@@ -5,13 +6,24 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import HydroObservation, IngestRun, ScoreSnapshot, Station, WeatherHour
+from .phase2_features import (
+    daylight_context,
+    flow_change,
+    monthly_percentile,
+    precipitation_total,
+    pressure_change,
+    rapid_rise_reference,
+)
 from .scoring import (
     CANDIDATE_RULES_VERSION,
+    EXPERIMENT_RULES_VERSION,
     RULES_VERSION,
     CandidateScoreInput,
+    ExperimentScoreInput,
     ScoreInput,
     ScoreResult,
     calculate_candidate_score,
+    calculate_experiment_score,
     calculate_score,
 )
 
@@ -32,7 +44,9 @@ def hydro_for_station(
     return list(session.scalars(query.order_by(HydroObservation.observed_at_utc)).all())
 
 
-def weather_for_station(session: Session, station_id: str, since: datetime) -> list[WeatherHour]:
+def weather_for_station(
+    session: Session, station_id: str, since: datetime, until: datetime | None = None
+) -> list[WeatherHour]:
     query = (
         select(WeatherHour)
         .where(
@@ -42,6 +56,8 @@ def weather_for_station(session: Session, station_id: str, since: datetime) -> l
         )
         .order_by(WeatherHour.valid_at_utc)
     )
+    if until is not None:
+        query = query.where(WeatherHour.valid_at_utc <= until)
     return list(session.scalars(query).all())
 
 
@@ -57,7 +73,11 @@ def _nearest(
 def score_station(
     session: Session, station_id: str, evaluation_time: datetime
 ) -> tuple[ScoreResult | None, dict]:
-    observations = hydro_for_station(session, station_id, evaluation_time - timedelta(days=15))
+    observations = [
+        row
+        for row in hydro_for_station(session, station_id, evaluation_time - timedelta(days=15))
+        if _aware(row.observed_at_utc) <= evaluation_time
+    ]
     if not observations:
         return None, {"baseline_median": None, "six_hour_change_pct": None, "latest": None}
     latest = observations[-1]
@@ -78,7 +98,9 @@ def score_station(
     if six_hour and six_hour.value > 0.001:
         change = (latest.value - six_hour.value) / six_hour.value * 100
 
-    weather = weather_for_station(session, station_id, evaluation_time - timedelta(hours=13))
+    weather = weather_for_station(
+        session, station_id, evaluation_time - timedelta(hours=13), evaluation_time
+    )
     hour = evaluation_time.replace(minute=0, second=0, microsecond=0)
     precip_values = [
         item.precip_mm
@@ -94,15 +116,24 @@ def score_station(
     )
     cloud = cloud_row.cloud_cover_pct if cloud_row else None
 
-    result = calculate_score(
-        ScoreInput(evaluation_time, latest_time, latest.value, baseline, change, precip, cloud)
+    score_input = ScoreInput(
+        evaluation_time, latest_time, latest.value, baseline, change, precip, cloud
     )
+    result = calculate_score(score_input)
     return result, {
         "baseline_median": baseline,
         "six_hour_change_pct": change,
         "latest": latest,
         "current_weather": cloud_row,
         "precipitation_12h_mm": precip,
+        "scoring_inputs": _serializable_inputs(score_input),
+    }
+
+
+def _serializable_inputs(data: ScoreInput | CandidateScoreInput | ExperimentScoreInput) -> dict:
+    return {
+        key: value.isoformat() if isinstance(value, datetime) else value
+        for key, value in asdict(data).items()
     }
 
 
@@ -185,23 +216,99 @@ def candidate_score_station(
         _aware(latest.observed_at_utc),
         latest.value,
     )
-    result = calculate_candidate_score(
-        CandidateScoreInput(
-            evaluation_time=evaluation_time,
-            latest_observed_at=_aware(latest.observed_at_utc),
-            seasonal_flow_percentile=seasonal["seasonal_flow_percentile"],
-            six_hour_change_pct=base_context.get("six_hour_change_pct"),
-            water_temperature_c=temperature.value if temperature else None,
-            water_temperature_observed_at=(
-                _aware(temperature.observed_at_utc) if temperature else None
-            ),
-        )
+    score_input = CandidateScoreInput(
+        evaluation_time=evaluation_time,
+        latest_observed_at=_aware(latest.observed_at_utc),
+        seasonal_flow_percentile=seasonal["seasonal_flow_percentile"],
+        six_hour_change_pct=base_context.get("six_hour_change_pct"),
+        water_temperature_c=temperature.value if temperature else None,
+        water_temperature_observed_at=(
+            _aware(temperature.observed_at_utc) if temperature else None
+        ),
     )
+    result = calculate_candidate_score(score_input)
     return result, {
         **base_context,
         **seasonal,
         "latest_water_temperature": temperature,
+        "candidate_scoring_inputs": _serializable_inputs(score_input),
     }
+
+
+def experiment_score_station(
+    session: Session,
+    station: Station,
+    evaluation_time: datetime,
+    base_context: dict | None = None,
+    candidate_context: dict | None = None,
+) -> tuple[ScoreResult | None, dict]:
+    if base_context is None:
+        _, base_context = score_station(session, station.id, evaluation_time)
+    if candidate_context is None:
+        _, candidate_context = candidate_score_station(
+            session, station.id, evaluation_time, base_context
+        )
+    latest = base_context.get("latest")
+    if latest is None:
+        return None, {
+            "scoring_inputs": None,
+            "monthly_sample_count": 0,
+            "monthly_year_count": 0,
+            "pressure_hpa": None,
+            "pressure_change_6h_hpa": None,
+            **daylight_context(evaluation_time, station.latitude, station.longitude),
+        }
+
+    observations = [
+        row
+        for row in hydro_for_station(session, station.id, evaluation_time - timedelta(days=15))
+        if _aware(row.observed_at_utc) <= _aware(latest.observed_at_utc)
+    ]
+    daily = list(
+        session.scalars(
+            select(HydroObservation).where(
+                HydroObservation.station_id == station.id,
+                HydroObservation.parameter == "daily_discharge",
+            )
+        ).all()
+    )
+    monthly, monthly_count, monthly_years = monthly_percentile(
+        daily, _aware(latest.observed_at_utc), latest.value
+    )
+    weather = weather_for_station(
+        session, station.id, evaluation_time - timedelta(hours=73), evaluation_time
+    )
+    current_hour = evaluation_time.replace(minute=0, second=0, microsecond=0)
+    current_weather = next(
+        (row for row in weather if _aware(row.valid_at_utc) == current_hour), None
+    )
+    temperature = candidate_context.get("latest_water_temperature")
+    score_input = ExperimentScoreInput(
+        evaluation_time=evaluation_time,
+        latest_observed_at=_aware(latest.observed_at_utc),
+        monthly_flow_percentile=monthly,
+        one_hour_change_pct=flow_change(observations, latest, 1),
+        six_hour_change_pct=base_context.get("six_hour_change_pct"),
+        twenty_four_hour_change_pct=flow_change(observations, latest, 24),
+        precipitation_6h_mm=precipitation_total(weather, evaluation_time, 6),
+        precipitation_24h_mm=precipitation_total(weather, evaluation_time, 24),
+        precipitation_72h_mm=precipitation_total(weather, evaluation_time, 72),
+        rapid_rise_threshold_pct=rapid_rise_reference(observations, latest),
+        water_temperature_c=temperature.value if temperature else None,
+        water_temperature_observed_at=(
+            _aware(temperature.observed_at_utc) if temperature else None
+        ),
+    )
+    result = calculate_experiment_score(score_input)
+    context = {
+        "scoring_inputs": _serializable_inputs(score_input),
+        "monthly_sample_count": monthly_count,
+        "monthly_year_count": monthly_years,
+        "pressure_hpa": current_weather.pressure_hpa if current_weather else None,
+        "pressure_change_6h_hpa": pressure_change(weather, evaluation_time),
+        **daylight_context(evaluation_time, station.latitude, station.longitude),
+    }
+    return result, context
 
 
 def persist_score_snapshots(
@@ -209,15 +316,32 @@ def persist_score_snapshots(
 ) -> int:
     written = 0
     for station_id in station_ids:
+        station = session.get(Station, station_id)
+        if station is None:
+            raise ValueError(f"Unknown station: {station_id}")
         current, base_context = score_station(session, station_id, evaluation_time)
-        candidate, context = candidate_score_station(
+        candidate, candidate_context = candidate_score_station(
             session, station_id, evaluation_time, base_context
         )
-        latest = context.get("latest")
+        experiment, experiment_context = experiment_score_station(
+            session, station, evaluation_time, base_context, candidate_context
+        )
+        latest = base_context.get("latest")
         hydro_observed_at = _aware(latest.observed_at_utc) if latest else None
-        for result, rules_version in (
-            (current, RULES_VERSION),
-            (candidate, CANDIDATE_RULES_VERSION),
+        for result, rules_version, scoring_inputs, feature_context in (
+            (current, RULES_VERSION, base_context.get("scoring_inputs"), None),
+            (
+                candidate,
+                CANDIDATE_RULES_VERSION,
+                candidate_context.get("candidate_scoring_inputs"),
+                None,
+            ),
+            (
+                experiment,
+                EXPERIMENT_RULES_VERSION,
+                experiment_context.get("scoring_inputs"),
+                experiment_context,
+            ),
         ):
             snapshot = session.scalar(
                 select(ScoreSnapshot).where(
@@ -235,14 +359,20 @@ def persist_score_snapshots(
                 "earned_points": result.earned_points if result else 0,
                 "components_json": {
                     "components": (
-                        [component.__dict__ for component in result.components]
-                        if result
-                        else []
+                        [component.__dict__ for component in result.components] if result else []
                     ),
                     "reasons": (
-                        result.reasons
-                        if result
-                        else ["No discharge observations are available."]
+                        result.reasons if result else ["No discharge observations are available."]
+                    ),
+                    "inputs": scoring_inputs,
+                    "context": (
+                        {
+                            key: value
+                            for key, value in feature_context.items()
+                            if key != "scoring_inputs"
+                        }
+                        if feature_context
+                        else None
                     ),
                 },
             }
@@ -278,9 +408,7 @@ def score_history(
     )
 
 
-def reliability_overview(
-    session: Session, evaluation_time: datetime, days: int
-) -> dict:
+def reliability_overview(session: Session, evaluation_time: datetime, days: int) -> dict:
     cutoff = evaluation_time - timedelta(days=days)
     runs = list(
         session.scalars(
@@ -373,18 +501,13 @@ def reliability_overview(
         )
         temperature_snapshots = sum(
             any(
-                component.get("key") == "water_temperature"
-                and component.get("points") is not None
+                component.get("key") == "water_temperature" and component.get("points") is not None
                 for component in snapshot.components_json.get("components", [])
             )
             for snapshot in candidate_snapshots
         )
-        discharge_at = (
-            _aware(latest_discharge.observed_at_utc) if latest_discharge else None
-        )
-        temperature_at = (
-            _aware(latest_temperature.observed_at_utc) if latest_temperature else None
-        )
+        discharge_at = _aware(latest_discharge.observed_at_utc) if latest_discharge else None
+        temperature_at = _aware(latest_temperature.observed_at_utc) if latest_temperature else None
         station_rows.append(
             {
                 "id": station.id,
@@ -432,21 +555,38 @@ def last_ingest(session: Session) -> IngestRun | None:
 
 
 def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
+    ranked_runs = (
+        select(
+            IngestRun.id.label("run_id"),
+            func.row_number()
+            .over(
+                partition_by=(IngestRun.source, IngestRun.station_id),
+                order_by=(IngestRun.started_at_utc.desc(), IngestRun.id.desc()),
+            )
+            .label("rank"),
+        )
+        .where(IngestRun.station_id.is_not(None))
+        .subquery()
+    )
     runs = list(
         session.scalars(
             select(IngestRun)
-            .where(IngestRun.station_id.is_not(None))
-            .order_by(IngestRun.started_at_utc.desc())
-            .limit(250)
+            .join(ranked_runs, IngestRun.id == ranked_runs.c.run_id)
+            .where(ranked_runs.c.rank == 1)
         ).all()
     )
-    latest: dict[tuple[str, str | None], IngestRun] = {}
-    last_success: dict[tuple[str, str | None], datetime] = {}
-    for run in runs:
-        key = (run.source, run.station_id)
-        latest.setdefault(key, run)
-        if run.status == "success" and key not in last_success:
-            last_success[key] = _aware(run.started_at_utc)
+    last_success = {
+        (source, station_id): _aware(started_at)
+        for source, station_id, started_at in session.execute(
+            select(
+                IngestRun.source,
+                IngestRun.station_id,
+                func.max(IngestRun.started_at_utc),
+            )
+            .where(IngestRun.station_id.is_not(None), IngestRun.status == "success")
+            .group_by(IngestRun.source, IngestRun.station_id)
+        ).all()
+    }
 
     source_rows = [
         {
@@ -454,7 +594,7 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
             "station_id": run.station_id,
             "status": run.status,
             "last_attempt_at_utc": _aware(run.started_at_utc),
-            "last_success_at_utc": last_success.get(key),
+            "last_success_at_utc": last_success.get((run.source, run.station_id)),
             "fetched_count": run.fetched_count,
             "upserted_count": run.upserted_count,
             "inserted_count": run.inserted_count,
@@ -463,7 +603,7 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
             "duration_ms": run.duration_ms,
             "error": run.error,
         }
-        for key, run in latest.items()
+        for run in runs
     ]
     source_rows.sort(key=lambda item: (item["source"], item["station_id"] or ""))
 

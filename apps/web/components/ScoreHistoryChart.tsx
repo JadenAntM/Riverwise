@@ -18,6 +18,7 @@ type Point = {
   timestamp: string;
   current: number | null;
   candidate: number | null;
+  experiment: number | null;
 };
 
 type VersionSummary = {
@@ -43,6 +44,7 @@ export function ScoreHistoryChart({
   const points = history ? chartPoints(history.snapshots) : [];
   const current = summarize(history?.snapshots ?? [], "v1.0.0");
   const candidate = summarize(history?.snapshots ?? [], "v1.1.0-shadow");
+  const experiment = summarize(history?.snapshots ?? [], "v1.2.0-shadow");
 
   return (
     <>
@@ -63,6 +65,7 @@ export function ScoreHistoryChart({
         <div className="score-history-legend" aria-label="Chart series">
           <span className="current">v1.0 current</span>
           <span className="candidate">v1.1 shadow</span>
+          <span className="experiment">v1.2 shadow</span>
         </div>
       </div>
 
@@ -97,7 +100,7 @@ export function ScoreHistoryChart({
                 labelFormatter={(value) => formatAtlantic(String(value))}
                 formatter={(value, name) => [
                   `${Number(value).toFixed(1)}/10`,
-                  name === "current" ? "v1.0 current" : "v1.1 shadow",
+                  name === "current" ? "v1.0 current" : name === "candidate" ? "v1.1 shadow" : "v1.2 shadow",
                 ]}
                 contentStyle={{ border: "1px solid #c7d0c5", borderRadius: 3 }}
               />
@@ -120,6 +123,16 @@ export function ScoreHistoryChart({
                 activeDot={{ r: 5, fill: "#d88039", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls={false}
               />
+              <Line
+                type="monotone"
+                dataKey="experiment"
+                stroke="#555d9a"
+                strokeWidth={2.5}
+                strokeDasharray="2 4"
+                dot={false}
+                activeDot={{ r: 5, fill: "#555d9a", stroke: "#fff", strokeWidth: 2 }}
+                connectNulls={false}
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -128,6 +141,7 @@ export function ScoreHistoryChart({
       <div className="history-coverage" aria-label="Stored score status summary">
         <HistorySummary label="v1.0 current" summary={current} />
         <HistorySummary label="v1.1 shadow" summary={candidate} />
+        <HistorySummary label="v1.2 shadow" summary={experiment} />
       </div>
       <p className="chart-note">
         One snapshot is stored after each scheduled import. Missing points preserve stale or unavailable
@@ -145,9 +159,11 @@ function chartPoints(snapshots: ScoreSnapshot[]): Point[] {
       timestamp: snapshot.computed_at_utc,
       current: null,
       candidate: null,
+      experiment: null,
     };
     if (snapshot.rules_version === "v1.0.0") point.current = snapshot.value;
     if (snapshot.rules_version === "v1.1.0-shadow") point.candidate = snapshot.value;
+    if (snapshot.rules_version === "v1.2.0-shadow") point.experiment = snapshot.value;
     grouped.set(snapshot.computed_at_utc, point);
   });
   return [...grouped.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp));

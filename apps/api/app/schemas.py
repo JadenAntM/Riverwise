@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -77,11 +78,25 @@ class StationDetail(StationSummary):
     current_weather: WeatherOut | None
 
 
+class ExperimentContextOut(BaseModel):
+    monthly_sample_count: int
+    monthly_year_count: int
+    pressure_hpa: float | None
+    pressure_change_6h_hpa: float | None
+    sunrise_at_utc: datetime
+    sunset_at_utc: datetime
+    is_daylight: bool
+    daylight_minutes: int
+    scoring_inputs: dict[str, Any] | None
+
+
 class ScoreComparisonOut(BaseModel):
     station_id: str
     station_name: str
     current_score: ScoreOut
     candidate_score: ScoreOut
+    experiment_score: ScoreOut
+    experiment_context: ExperimentContextOut
     latest_flow: ObservationOut | None
     latest_water_temperature: ObservationOut | None
     seasonal_flow_percentile: float | None
@@ -105,6 +120,9 @@ class ScoreSnapshotOut(BaseModel):
     available_points: int
     earned_points: int
     rules_version: str
+    components: list[ComponentOut] = Field(default_factory=list)
+    inputs: dict[str, Any] | None = None
+    context: dict[str, Any] | None = None
 
     @field_validator("computed_at_utc", "hydro_observed_at_utc")
     @classmethod

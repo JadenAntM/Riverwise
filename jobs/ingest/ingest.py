@@ -279,7 +279,7 @@ def _ingest_weather_station(
                 "latitude": station["latitude"],
                 "longitude": station["longitude"],
                 "hourly": "temperature_2m,precipitation,cloud_cover,surface_pressure",
-                "past_days": 2,
+                "past_days": 4,
                 "forecast_days": 1,
                 "timezone": "GMT",
             },
