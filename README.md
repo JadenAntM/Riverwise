@@ -52,7 +52,7 @@ Implemented:
 - Automated backend boundary/integration tests, frontend lint/type/build checks, and CI.
 - Playwright browser journeys for station loading, detail navigation, charts, status reporting, the map's text alternative, and API error states.
 
-Phase 2 data-quality work in the current working tree is **not yet deployed**: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. An external notification is not active until a destination is configured and verified.
+Phase 2 data-quality work was deployed on 2026-10-02: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. External API and ingestion-health monitors are configured, but a post-deployment observation window and confirmed email delivery are still needed before calling operator alerting reliable.
 
 ## Architecture
 
@@ -142,7 +142,7 @@ To check local configuration, fixture parsing, database connectivity, and statio
 - `GET /health`
 - `GET /api/v1/stations`
 - `GET /api/v1/ingestion`
-- `GET /api/v1/operational-health` (`503` when current ingestion or discharge needs attention; not a process-uptime check)
+- `GET /api/v1/operational-health` (`503` when current ingestion or discharge needs attention; not a process-uptime check). `HEAD` returns the same status without a body for external monitors.
 - `GET /api/v1/reliability?days=30` (`days` must be `7` or `30`)
 - `GET /api/v1/scores/compare`
 - `GET /api/v1/stations/{id}`
