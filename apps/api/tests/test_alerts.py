@@ -60,3 +60,15 @@ def test_operational_health_exposes_degraded_state_without_secrets(client: TestC
     status = client.get("/api/v1/ingestion")
     assert status.status_code == 200
     assert status.json()["alerts"] == response.json()["alerts"]
+
+
+def test_operational_health_head_matches_get_status(client: TestClient, monkeypatch) -> None:
+    degraded = client.head("/api/v1/operational-health")
+    assert degraded.status_code == 503
+    assert degraded.content == b""
+
+    monkeypatch.setattr("app.main.operational_findings", lambda session, now: [])
+    assert client.get("/api/v1/operational-health").status_code == 200
+    healthy = client.head("/api/v1/operational-health")
+    assert healthy.status_code == 200
+    assert healthy.content == b""

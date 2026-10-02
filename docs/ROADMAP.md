@@ -49,7 +49,7 @@ Release labels in this table are product milestones, not score-rule versions. Th
 
 ## 2. Data quality and operational foundation
 
-At the owner's explicit request, this milestone started while Phase 1's continuous public-uptime evidence was still open; the two observation tracks are not conflated. As of 2026-10-02, the local implementation and tests for source validation, revision auditing, per-station gap and failure diagnoses, run IDs, and deduplicated alert detection are complete; see [ADR 0007](decisions/0007-data-quality-and-operator-alerts.md). This is not yet a production completion claim. A notification destination and real delivery test, production rollout, and a measured observation period remain open.
+At the owner's explicit request, this milestone started while Phase 1's continuous public-uptime evidence was still open; the two observation tracks are not conflated. On 2026-10-02, source validation, revision auditing, per-station gap and failure diagnoses, run IDs, and deduplicated alert detection were deployed; see [ADR 0007](decisions/0007-data-quality-and-operator-alerts.md). A separate external ingestion-health monitor is configured. Confirmed email delivery and a measured post-deployment observation period remain open, so this is not yet a Phase 2 definition-of-done claim.
 
 1. Define expected update cadence and acceptable observation age per station/source from actual history. Separate provider outage, delayed publication, genuinely absent measurement, and parser failure.
 2. Test duplicate/revised upstream rows, qualifiers, impossible values, timestamp gaps, and idempotent retries. Show coverage and revision counts by station; retain enough provenance for diagnosis.

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -167,6 +167,13 @@ def operational_health(session: Session = Depends(get_db)) -> JSONResponse:
         status_code=503 if findings else 200,
         content=payload.model_dump(mode="json"),
     )
+
+
+@app.head("/api/v1/operational-health", include_in_schema=False)
+def operational_health_head(session: Session = Depends(get_db)) -> Response:
+    """Expose the same status to free external monitors that send HEAD requests."""
+    findings = operational_findings(session, datetime.now(UTC))
+    return Response(status_code=503 if findings else 200)
 
 
 @app.get("/api/v1/reliability", response_model=ReliabilityResponse)
