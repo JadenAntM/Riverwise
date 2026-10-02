@@ -52,7 +52,7 @@ Implemented:
 - Automated backend boundary/integration tests, frontend lint/type/build checks, and CI.
 - Playwright browser journeys for station loading, detail navigation, charts, status reporting, the map's text alternative, and API error states.
 
-Phase 2 data-quality work was deployed on 2026-10-02: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. External API and ingestion-health monitors are configured, but a post-deployment observation window and confirmed email delivery are still needed before calling operator alerting reliable.
+Phase 2 data-quality work was deployed on 2026-10-02: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. External API and ingestion-health monitors are active, and the owner received a test email. A post-deployment observation window and a real degradation-notification test are still needed before calling operator alerting reliable.
 
 ## Architecture
 
