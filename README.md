@@ -6,6 +6,8 @@ The score is not a prediction of catches, river safety, fish abundance, habitat 
 
 [View the live dashboard](https://web-production-4762c.up.railway.app) · [Check API health](https://api-production-f376.up.railway.app/health)
 
+The [current project roadmap](docs/ROADMAP.md) sequences the remaining reliability evidence, data-quality work, better station discovery, and a forecast-first Trip Planner. [`PROJECT_SPEC.md`](PROJECT_SPEC.md) remains the source of product and data-interpretation rules.
+
 ## Why I built Riverwise
 
 I am an avid fly angler, and the Margaree River is one of my favourite places to fish, but it is about a 3.5 drive from my house. Deciding whether to make that trip often meant piecing together river flow and nearby weather from several hard to find sources. Riverwise grew from wanting one mobile-friendly view of the available conditions while keeping the source, age, and uncertainty of the data visible. It provides context for planning a trip without pretending to predict whether the fish will bite.
@@ -49,6 +51,8 @@ Implemented:
 - Accessible station map supplemented by an equivalent text station list.
 - Automated backend boundary/integration tests, frontend lint/type/build checks, and CI.
 - Playwright browser journeys for station loading, detail navigation, charts, status reporting, the map's text alternative, and API error states.
+
+Phase 2 data-quality work in the current working tree is **not yet deployed**: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. An external notification is not active until a destination is configured and verified.
 
 ## Architecture
 
@@ -138,6 +142,7 @@ To check local configuration, fixture parsing, database connectivity, and statio
 - `GET /health`
 - `GET /api/v1/stations`
 - `GET /api/v1/ingestion`
+- `GET /api/v1/operational-health` (`503` when current ingestion or discharge needs attention; not a process-uptime check)
 - `GET /api/v1/reliability?days=30` (`days` must be `7` or `30`)
 - `GET /api/v1/scores/compare`
 - `GET /api/v1/stations/{id}`
@@ -145,6 +150,8 @@ To check local configuration, fixture parsing, database connectivity, and statio
 - `GET /api/v1/stations/{id}/history?hours=48` (`1–168`; invalid values return FastAPI’s documented `422` validation response)
 
 Known stations without usable data return `200` with explicit null/status fields. Unknown stations return `404`.
+
+The ingestion response includes current operator findings, latest source-run IDs and error categories, and station-level discharge diagnoses. The reliability response includes descriptive observed cadence and long-gap counts. `OPERATOR_ALERT_WEBHOOK_URL` is optional and must point to a destination accepting Riverwise JSON POSTs; leave it unset until the operator chooses and tests a channel. The webhook is separate from any future user-facing fishing-condition alerts. Even with a webhook, an external monitor is required to detect a completely stopped scheduler in real time.
 
 ## Source discoveries
 
@@ -194,7 +201,7 @@ Riverwise is deployed on Railway as four services:
 
 The live application is available at [web-production-4762c.up.railway.app](https://web-production-4762c.up.railway.app). The API and hosted ingestion use Docker builds, while Railway currently reports a Railpack build for the web service; see ADR 0005 for this deployment deviation. The hosted ingestion command exits after each run rather than keeping a scheduler container active.
 
-The Postgres Backups tab requires Railway Pro for native backups on the current Trial plan, as confirmed by the user on 2026-09-29. A [manual PostgreSQL export and local restore drill](docs/deployment/postgres-backups.md) succeeded that day. Keep a second encrypted copy outside the laptop; provider ingestion can rebuild observations, but it cannot recreate the exact accumulated score and reliability history.
+The Postgres Backups tab requires Railway Pro for native backups on the current Trial plan, as confirmed by the user on 2026-09-29. A [manual PostgreSQL export and local restore drill](docs/deployment/postgres-backups.md) succeeded that day. The owner is deferring an off-laptop copy while there is no user data and accepts the risk of losing accumulated score and reliability history if the laptop is lost. Revisit separate encrypted storage before retaining user data.
 
 Follow the [`Railway deployment runbook`](docs/deployment/railway.md) for configuration, cost controls, computer-off verification, and rollback. ADR 0005 records the hosting decision and remaining production evidence.
 

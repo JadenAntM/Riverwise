@@ -5,6 +5,7 @@ from statistics import median
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .data_quality import discharge_gaps, discharge_state
 from .models import HydroObservation, IngestRun, ScoreSnapshot, Station, WeatherHour
 from .phase2_features import (
     daylight_context,
@@ -480,6 +481,17 @@ def reliability_overview(session: Session, evaluation_time: datetime, days: int)
             or 0
             for parameter in ("discharge", "water_temperature")
         }
+        recent_discharge_times = list(
+            session.scalars(
+                select(HydroObservation.observed_at_utc).where(
+                    HydroObservation.station_id == station.id,
+                    HydroObservation.parameter == "discharge",
+                    HydroObservation.observed_at_utc >= cutoff,
+                    HydroObservation.observed_at_utc <= evaluation_time,
+                )
+            ).all()
+        )
+        gap_summary = discharge_gaps(recent_discharge_times)
         daily_rows = list(
             session.scalars(
                 select(HydroObservation)
@@ -532,6 +544,10 @@ def reliability_overview(session: Session, evaluation_time: datetime, days: int)
                     else None
                 ),
                 "recent_discharge_observation_count": observation_counts["discharge"],
+                "observed_discharge_cadence_minutes": gap_summary.observed_cadence_minutes,
+                "discharge_gap_threshold_minutes": gap_summary.gap_threshold_minutes,
+                "discharge_gap_count": gap_summary.gap_count,
+                "longest_discharge_gap_minutes": gap_summary.longest_gap_minutes,
                 "recent_water_temperature_observation_count": observation_counts[
                     "water_temperature"
                 ],
@@ -590,6 +606,7 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
 
     source_rows = [
         {
+            "run_id": run.id,
             "source": run.source,
             "station_id": run.station_id,
             "status": run.status,
@@ -601,11 +618,16 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
             "updated_count": run.updated_count,
             "revision_count": run.revision_count,
             "duration_ms": run.duration_ms,
+            "error_kind": run.error_kind,
             "error": run.error,
         }
         for run in runs
     ]
     source_rows.sort(key=lambda item: (item["source"], item["station_id"] or ""))
+    latest_wsc_runs = {
+        run.station_id: run for run in runs if run.source == "offline_fixtures"
+    }
+    latest_wsc_runs.update({run.station_id: run for run in runs if run.source == "wsc"})
 
     station_rows = []
     stations = list(session.scalars(select(Station).order_by(Station.display_order)).all())
@@ -620,11 +642,19 @@ def ingestion_overview(session: Session, evaluation_time: datetime) -> dict:
             .limit(1)
         )
         observed_at = _aware(latest_observation.observed_at_utc) if latest_observation else None
+        wsc_run = latest_wsc_runs.get(station.id)
         station_rows.append(
             {
                 "id": station.id,
                 "name": station.name,
                 "latest_observed_at_utc": observed_at,
+                "data_state": discharge_state(
+                    evaluation_time,
+                    observed_at,
+                    wsc_run.started_at_utc if wsc_run else None,
+                    wsc_run.status if wsc_run else None,
+                    wsc_run.error_kind if wsc_run else None,
+                ),
                 "age_minutes": (
                     max(0, int((evaluation_time - observed_at).total_seconds() / 60))
                     if observed_at

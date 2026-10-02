@@ -2,9 +2,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from .alerts import operational_findings
 from .config import get_settings
 from .database import get_db
 from .models import Station
@@ -13,6 +15,7 @@ from .schemas import (
     HistoryResponse,
     IngestionStatusOut,
     ObservationOut,
+    OperationalHealthOut,
     ReliabilityResponse,
     ScoreComparisonOut,
     ScoreHistoryResponse,
@@ -137,11 +140,32 @@ def stations(session: Session = Depends(get_db)) -> list[StationSummary]:
 def ingestion_status(session: Session = Depends(get_db)) -> IngestionStatusOut:
     now = datetime.now(UTC)
     overview = ingestion_overview(session, now)
+    alerts = operational_findings(session, now)
     return IngestionStatusOut(
         generated_at_utc=now,
         schedule="every 30 minutes",
         sources=overview["sources"],
         stations=overview["stations"],
+        alerts=[finding.__dict__ for finding in alerts],
+    )
+
+
+@app.get(
+    "/api/v1/operational-health",
+    response_model=OperationalHealthOut,
+    responses={503: {"model": OperationalHealthOut, "description": "Ingestion needs attention"}},
+)
+def operational_health(session: Session = Depends(get_db)) -> JSONResponse:
+    now = datetime.now(UTC)
+    findings = operational_findings(session, now)
+    payload = OperationalHealthOut(
+        status="degraded" if findings else "ok",
+        generated_at_utc=now,
+        alerts=[finding.__dict__ for finding in findings],
+    )
+    return JSONResponse(
+        status_code=503 if findings else 200,
+        content=payload.model_dump(mode="json"),
     )
 
 

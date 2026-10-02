@@ -6,7 +6,7 @@ This runbook deploys Riverwise as four Railway services: PostgreSQL, the FastAPI
 
 - Merge the tested Railway compatibility pull request to `main`.
 - Confirm the Railway project contains a PostgreSQL service named `Postgres` (or substitute its actual service name in reference variables).
-- Configure a usage alert and a hard spending limit in Railway before starting application services.
+- On the current free/trial plan, record usage and review it regularly; the owner reports no spending-cap setting is available and accepts proceeding without one. Revisit alerts and limits before a paid-plan change.
 - Keep database public networking disabled. Riverwise uses Railway's private `DATABASE_URL` reference.
 
 Connecting a GitHub source can create a deployment. Do not connect any Riverwise service until the compatibility changes are on `main`.
@@ -129,11 +129,17 @@ Then test independence from the development computer:
 ## 6. Portfolio and operations follow-up
 
 - Add `WEB_URL` to the GitHub repository description, README, résumé project entry, and portfolio.
-- Record the deployed commit SHA, date, URLs, backup schedule, alert threshold, hard limit, and independence-test evidence in the ADR.
+- Record the deployed commit SHA, date, URLs, backup/restore status, current cost-control availability, and independence-test evidence in the ADR.
 - After seven days, record measured Railway usage and projected monthly cost. Do not describe trial credit as a permanent hosting cost.
 - Before the trial ends, decide whether to move to the paid plan or pause the deployment. Confirm the selected plan still supports all four services and cron jobs.
 
 The [PostgreSQL backup runbook](postgres-backups.md) describes the temporary manual export and local restore drill. Keep the dated restore evidence in ADR 0005. Count seven consecutive days from the first stored production snapshot, and distinguish source-attempt success from availability of the public web and API services.
+
+## Phase 2 operator alert rollout
+
+The API's `/api/v1/operational-health` returns HTTP 503 for current discharge staleness, three consecutive station/source failures, or an import overdue by 90 minutes. `/api/v1/ingestion` and `/status` explain the same findings. These are data-operation checks; `/health` remains a process/database check. The scheduled job opens and resolves deduplicated alerts in PostgreSQL. It posts opening and six-hour reminder events only when `OPERATOR_ALERT_WEBHOOK_URL` points to an HTTPS endpoint that accepts Riverwise's JSON body. Set the variable only on the scheduled-ingestion service, keep the URL out of source control, and test delivery with a controlled local or non-production failure before relying on it. With no URL, findings appear in logs and the status page but no external notification is sent.
+
+Monitor `/api/v1/operational-health` from outside Railway if continuous scheduler-stoppage detection is required: a stopped scheduled job cannot send its own webhook. Document the monitor interval, destination, test result, and any actual incidents before claiming alerting is operational. Apply migrations 0004–0006 before deploying the new API or ingestion image; an old application version may not understand new alert-state data, so verify a rollback path. No Phase 2 production rollout or notification destination has been verified yet.
 
 ## Rollback
 

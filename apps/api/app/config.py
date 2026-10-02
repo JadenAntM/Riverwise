@@ -18,14 +18,26 @@ def normalize_database_url(value: str) -> str:
 class Settings(BaseSettings):
     database_url: str = f"sqlite:///{PROJECT_ROOT / 'riverwise.sqlite3'}"
     api_cors_origins: str = "http://localhost:3000"
+    operator_alert_webhook_url: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", hide_input_in_errors=True
+    )
 
     @field_validator("database_url", mode="before")
     @classmethod
     def select_postgresql_driver(cls, value: object) -> object:
         if isinstance(value, str):
             return normalize_database_url(value)
+        return value
+
+    @field_validator("operator_alert_webhook_url", mode="before")
+    @classmethod
+    def require_https_webhook(cls, value: object) -> object:
+        if value in (None, ""):
+            return None
+        if not isinstance(value, str) or not value.startswith("https://"):
+            raise ValueError("Operator alert webhook URL must use HTTPS")
         return value
 
     @property

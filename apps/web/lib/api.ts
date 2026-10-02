@@ -115,6 +115,7 @@ export type ScoreHistory = {
 };
 
 export type IngestSourceStatus = {
+  run_id: number;
   source: string;
   station_id: string | null;
   status: "success" | "failed";
@@ -126,6 +127,7 @@ export type IngestSourceStatus = {
   updated_count: number;
   revision_count: number;
   duration_ms: number | null;
+  error_kind: string | null;
   error: string | null;
 };
 
@@ -154,6 +156,10 @@ export type StationReliability = {
   candidate_snapshot_count: number;
   water_temperature_availability_pct: number | null;
   recent_discharge_observation_count: number;
+  observed_discharge_cadence_minutes: number | null;
+  discharge_gap_threshold_minutes: number | null;
+  discharge_gap_count: number;
+  longest_discharge_gap_minutes: number | null;
   recent_water_temperature_observation_count: number;
   historical_daily_observation_count: number;
   historical_first_date: string | null;
@@ -173,6 +179,7 @@ export type StationFreshness = {
   name: string;
   latest_observed_at_utc: string | null;
   age_minutes: number | null;
+  data_state: "current" | "provider_error" | "invalid_payload" | "missing_measurement" | "missing" | "delayed_publication" | "stale" | "future_observation";
 };
 
 export type IngestionStatus = {
@@ -180,6 +187,13 @@ export type IngestionStatus = {
   schedule: string;
   sources: IngestSourceStatus[];
   stations: StationFreshness[];
+  alerts: {
+    key: string;
+    code: string;
+    source: string | null;
+    station_id: string;
+    message: string;
+  }[];
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";

@@ -1,6 +1,6 @@
 # Manual PostgreSQL export and restore drill
 
-Riverwise stores reproducible provider observations and non-reproducible accumulated score snapshots and ingestion history. Until a native backup schedule is confirmed and enabled, take a portable logical export at least weekly and before schema changes. Keep copies on encrypted storage outside this repository and outside the Railway project. A local-only copy does not survive loss of that computer.
+Riverwise stores reproducible provider observations and non-reproducible accumulated score snapshots and ingestion history. Until a native backup schedule is confirmed and enabled, take a portable logical export at least weekly and before schema changes. Keep copies outside this repository and outside the Railway project. A local-only copy does not survive loss of that computer. As of 2026-10-02, the owner accepts that risk while there is no user data and is deferring a separate encrypted copy until before user data is retained.
 
 Railway's [Postgres backup guide](https://docs.railway.com/guides/postgres-backups-restores) documents logical dumps and the `railway connect --tunnel-only` workflow. On 2026-09-29, the user confirmed that this project's Postgres **Backups** tab requires Pro for native backups on the current Trial plan. Recheck the tab after any plan change. A native volume backup restores within the same Railway project and environment, while a logical dump can be restored elsewhere.
 

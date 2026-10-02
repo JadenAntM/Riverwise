@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -176,6 +176,10 @@ class StationReliabilityOut(BaseModel):
     candidate_snapshot_count: int
     water_temperature_availability_pct: float | None
     recent_discharge_observation_count: int
+    observed_discharge_cadence_minutes: float | None
+    discharge_gap_threshold_minutes: float | None
+    discharge_gap_count: int
+    longest_discharge_gap_minutes: float | None
     recent_water_temperature_observation_count: int
     historical_daily_observation_count: int
     historical_first_date: date | None
@@ -217,6 +221,7 @@ class HealthResponse(BaseModel):
 
 
 class IngestSourceStatusOut(BaseModel):
+    run_id: int
     source: str
     station_id: str | None
     status: str
@@ -228,6 +233,7 @@ class IngestSourceStatusOut(BaseModel):
     updated_count: int
     revision_count: int
     duration_ms: int | None
+    error_kind: str | None
     error: str | None
 
 
@@ -236,6 +242,21 @@ class StationFreshnessOut(BaseModel):
     name: str
     latest_observed_at_utc: datetime | None
     age_minutes: int | None
+    data_state: str
+
+
+class OperationalAlertOut(BaseModel):
+    key: str
+    code: str
+    source: str | None
+    station_id: str
+    message: str
+
+
+class OperationalHealthOut(BaseModel):
+    status: Literal["ok", "degraded"]
+    generated_at_utc: datetime
+    alerts: list[OperationalAlertOut]
 
 
 class IngestionStatusOut(BaseModel):
@@ -243,3 +264,4 @@ class IngestionStatusOut(BaseModel):
     schedule: str
     sources: list[IngestSourceStatusOut]
     stations: list[StationFreshnessOut]
+    alerts: list[OperationalAlertOut]
