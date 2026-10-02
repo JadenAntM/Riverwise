@@ -1,5 +1,7 @@
 # Riverwise: Brook Trout Conditions — implementation specification
 
+This specification defines the original release and enduring product/data rules. The current post-MVP sequence is in [`docs/ROADMAP.md`](docs/ROADMAP.md); [ADR 0006](docs/decisions/0006-v1-2-shadow-conditions-model.md) records the deployed third, shadow-only score version. First-release and two-version language below describes the original acceptance scope, not the current deployment inventory.
+
 ## Product goal
 
 Build a mobile-friendly dashboard for anglers checking Nova Scotia rivers. Show measured river flow and nearby weather, plus a transparent **experimental conditions score**. The score is a heuristic for exploring conditions, not a validated prediction of catches, river safety, fish abundance, habitat quality, or legal fishing eligibility.

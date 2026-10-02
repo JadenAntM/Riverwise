@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import HydroObservation, Station, WeatherHour
+from .models import HydroObservation, HydroRevision, Station, WeatherHour
 
 WSC_HEADERS = {
     "ID",
@@ -32,6 +32,10 @@ PARAMETERS = {
 }
 
 
+class NoUsableObservations(ValueError):
+    """A valid provider response contained no measurements Riverwise can use."""
+
+
 @dataclass(frozen=True)
 class HydroRow:
     station_id: str
@@ -41,6 +45,17 @@ class HydroRow:
     unit: str
     qualifier: str | None
     approval: str | None
+
+
+def _unique_hydro_rows(rows: list[HydroRow]) -> list[HydroRow]:
+    unique: dict[tuple[str, datetime, str], HydroRow] = {}
+    for row in rows:
+        key = (row.station_id, row.observed_at_utc, row.parameter)
+        previous = unique.get(key)
+        if previous is not None and previous != row:
+            raise ValueError("Provider response contains conflicting duplicate observations")
+        unique[key] = row
+    return list(unique.values())
 
 
 @dataclass(frozen=True)
@@ -74,6 +89,8 @@ def parse_wsc_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]
         parameter_id = raw["Parameter/Paramètre"].strip()
         if parameter_id not in PARAMETERS:
             continue
+        if not raw["Value/Valeur"].strip():
+            continue
         value = float(raw["Value/Valeur"])
         if not math.isfinite(value):
             raise ValueError("Hydrometric values must be finite")
@@ -102,8 +119,8 @@ def parse_wsc_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]
             )
         )
     if not rows:
-        raise ValueError("WSC response contained no usable observations")
-    return rows
+        raise NoUsableObservations("WSC response contained no usable observations")
+    return _unique_hydro_rows(rows)
 
 
 def parse_wsc_daily_csv(content: str, allowed_station_ids: set[str]) -> list[HydroRow]:
@@ -123,6 +140,8 @@ def parse_wsc_daily_csv(content: str, allowed_station_ids: set[str]) -> list[Hyd
             "discharge/débit",
         }:
             continue
+        if not raw["Value/Valeur"].strip():
+            continue
         value = float(raw["Value/Valeur"])
         if not math.isfinite(value) or value < 0:
             raise ValueError("Daily discharge must be finite and nonnegative")
@@ -139,8 +158,8 @@ def parse_wsc_daily_csv(content: str, allowed_station_ids: set[str]) -> list[Hyd
             )
         )
     if not rows:
-        raise ValueError("WSC daily response contained no usable observations")
-    return rows
+        raise NoUsableObservations("WSC daily response contained no usable observations")
+    return _unique_hydro_rows(rows)
 
 
 def parse_open_meteo(
@@ -151,20 +170,50 @@ def parse_open_meteo(
     keys = ("temperature_2m", "precipitation", "cloud_cover", "surface_pressure")
     if not times or any(len(hourly.get(key, [])) != len(times) for key in keys):
         raise ValueError("Open-Meteo response contains mismatched hourly arrays")
+    limits = {
+        "temperature_2m": (-80, 60),
+        "precipitation": (0, 500),
+        "cloud_cover": (0, 100),
+        "surface_pressure": (800, 1100),
+    }
     result = []
+    seen_times: set[datetime] = set()
     for index, raw_time in enumerate(times):
-        valid_at = datetime.fromisoformat(raw_time).replace(tzinfo=UTC)
+        valid_at = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+        valid_at = (
+            valid_at.replace(tzinfo=UTC)
+            if valid_at.tzinfo is None
+            else valid_at.astimezone(UTC)
+        )
+        if valid_at in seen_times:
+            raise ValueError("Open-Meteo response contains duplicate hourly timestamps")
+        seen_times.add(valid_at)
+        values = {}
+        for key, (minimum, maximum) in limits.items():
+            value = hourly[key][index]
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"Open-Meteo {key} must be numeric or null")
+                if not math.isfinite(value) or not minimum <= value <= maximum:
+                    raise ValueError(f"Open-Meteo {key} is outside the accepted source range")
+            values[key] = value
         result.append(
             {
                 "station_id": station_id,
                 "valid_at_utc": valid_at,
                 "kind": "historical_or_modelled" if valid_at <= evaluation_time else "forecast",
-                "air_temp_c": hourly["temperature_2m"][index],
-                "precip_mm": hourly["precipitation"][index],
-                "cloud_cover_pct": hourly["cloud_cover"][index],
-                "pressure_hpa": hourly["surface_pressure"][index],
+                "air_temp_c": values["temperature_2m"],
+                "precip_mm": values["precipitation"],
+                "cloud_cover_pct": values["cloud_cover"],
+                "pressure_hpa": values["surface_pressure"],
             }
         )
+    if not any(
+        row[key] is not None
+        for row in result
+        for key in ("air_temp_c", "precip_mm", "cloud_cover_pct", "pressure_hpa")
+    ):
+        raise NoUsableObservations("Open-Meteo response contained no usable weather values")
     return result
 
 
@@ -183,12 +232,33 @@ def upsert_hydro(
             )
         )
         if existing:
+            old_fields = {
+                "value": existing.value,
+                "unit": existing.unit,
+                "qualifier": existing.qualifier,
+                "approval": existing.approval,
+            }
+            new_fields = {
+                "value": row.value,
+                "unit": row.unit,
+                "qualifier": row.qualifier,
+                "approval": row.approval,
+            }
             changed = (
-                existing.value != row.value
-                or existing.unit != row.unit
-                or existing.qualifier != row.qualifier
-                or existing.approval != row.approval
+                old_fields != new_fields
             )
+            if changed:
+                session.add(
+                    HydroRevision(
+                        observation_id=existing.id,
+                        station_id=row.station_id,
+                        observed_at_utc=row.observed_at_utc,
+                        parameter=row.parameter,
+                        detected_at_utc=ingested_at,
+                        old_fields_json=old_fields,
+                        new_fields_json=new_fields,
+                    )
+                )
             existing.value = row.value
             existing.unit = row.unit
             existing.qualifier = row.qualifier

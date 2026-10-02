@@ -55,6 +55,10 @@ def test_ingestion_status_reports_sources_and_station_freshness(client: TestClie
     assert len(payload["stations"]) == 6
     assert payload["sources"][0]["source"] == "offline_fixtures"
     assert payload["sources"][0]["station_id"] == "01FB001"
+    assert payload["sources"][0]["run_id"] > 0
+    assert payload["sources"][0]["error_kind"] is None
+    assert payload["stations"][0]["data_state"] == "current"
+    assert payload["stations"][1]["data_state"] == "missing"
 
 
 def test_ingestion_status_keeps_last_success_after_many_failures(session: Session) -> None:
@@ -142,6 +146,8 @@ def test_reliability_reports_measured_metrics(client: TestClient) -> None:
     assert first["historical_daily_observation_count"] == 42
     assert first["candidate_snapshot_count"] == 1
     assert first["water_temperature_availability_pct"] == 100.0
+    assert first["observed_discharge_cadence_minutes"] is not None
+    assert first["discharge_gap_count"] >= 0
     provider = payload["providers"][0]
     assert provider["attempts"] == 1
     assert provider["success_rate_pct"] == 100.0

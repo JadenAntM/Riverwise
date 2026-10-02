@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings, normalize_database_url
 
 
@@ -26,3 +29,13 @@ def test_settings_normalize_provider_database_url() -> None:
     settings = Settings(database_url="postgresql://user:pass@host/db")
 
     assert settings.database_url == "postgresql+psycopg://user:pass@host/db"
+
+
+def test_operator_webhook_is_optional_and_requires_https() -> None:
+    assert Settings(operator_alert_webhook_url="").operator_alert_webhook_url is None
+    assert (
+        Settings(operator_alert_webhook_url="https://example.org/alerts").operator_alert_webhook_url
+        == "https://example.org/alerts"
+    )
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        Settings(operator_alert_webhook_url="http://example.org/alerts")

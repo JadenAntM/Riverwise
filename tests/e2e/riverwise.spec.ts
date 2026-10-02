@@ -135,6 +135,7 @@ type MockOptions = {
   missingStation?: boolean;
   mixedFreshness?: boolean;
   legacyComparison?: boolean;
+  activeAlert?: boolean;
 };
 
 async function mockApi(page: Page, options: MockOptions = {}) {
@@ -226,6 +227,7 @@ async function mockApi(page: Page, options: MockOptions = {}) {
           schedule: "every 30 minutes",
           sources: [
             {
+              run_id: 42,
               source: "wsc_realtime",
               station_id: "01FB001",
               status: "success",
@@ -237,6 +239,7 @@ async function mockApi(page: Page, options: MockOptions = {}) {
               updated_count: 10,
               revision_count: 0,
               duration_ms: 420,
+              error_kind: null,
               error: null,
             },
           ],
@@ -249,7 +252,17 @@ async function mockApi(page: Page, options: MockOptions = {}) {
             age_minutes: options.mixedFreshness
               ? station.id === "01FB001" ? 181 : null
               : 26,
+            data_state: options.mixedFreshness
+              ? station.id === "01FB001" ? "stale" : "missing"
+              : "current",
           })),
+          alerts: options.activeAlert ? [{
+            key: "discharge_stale:01FB001",
+            code: "discharge_stale",
+            source: "wsc",
+            station_id: "01FB001",
+            message: "WSC 01FB001 has no discharge reading within three hours.",
+          }] : [],
         },
       });
       return;
@@ -286,6 +299,10 @@ async function mockApi(page: Page, options: MockOptions = {}) {
             candidate_snapshot_count: 24,
             water_temperature_availability_pct: 0,
             recent_discharge_observation_count: 288,
+            observed_discharge_cadence_minutes: 15,
+            discharge_gap_threshold_minutes: 60,
+            discharge_gap_count: 1,
+            longest_discharge_gap_minutes: 90,
             recent_water_temperature_observation_count: 0,
             historical_daily_observation_count: 3400,
             historical_first_date: "2016-09-24",
@@ -378,11 +395,19 @@ test("shows stale and unavailable station readings on the status page", async ({
   await page.goto("/status");
 
   const stale = page.locator(".freshness-card").filter({ hasText: "WSC 01FB001" });
-  const unavailable = page.locator(".freshness-card").filter({ hasText: "WSC 01EF001" });
+  const missing = page.locator(".freshness-card").filter({ hasText: "WSC 01EF001" });
   await expect(stale.getByText("Stale", { exact: true })).toBeVisible();
   await expect(stale).toContainText("181 minutes old");
-  await expect(unavailable.getByText("Unavailable", { exact: true })).toBeVisible();
-  await expect(unavailable).toContainText("No discharge observation stored");
+  await expect(missing.getByText("Missing", { exact: true })).toBeVisible();
+  await expect(missing).toContainText("No discharge observation stored");
+});
+
+test("shows an actionable operator alert and observed discharge gap", async ({ page }) => {
+  await mockApi(page, { activeAlert: true });
+  await page.goto("/status");
+  await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
+  await expect(page.getByText("WSC 01FB001 has no discharge reading within three hours.")).toBeVisible();
+  await expect(page.getByText("1 (over 60 min)").first()).toBeVisible();
 });
 
 test("keeps the homepage usable when ingestion status cannot load", async ({ page }) => {

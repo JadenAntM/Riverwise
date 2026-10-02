@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,6 +87,10 @@ def client(session: Session) -> TestClient:
         yield session
 
     app.dependency_overrides[get_db] = override_db
-    with TestClient(app) as test_client:
-        yield test_client
+    # API reads use the current time, while committed provider fixtures have fixed timestamps.
+    # Freeze only the API clock so these tests remain valid as calendar time advances.
+    with patch("app.main.datetime", wraps=datetime) as clock:
+        clock.now.return_value = EVALUATION_TIME
+        with TestClient(app) as test_client:
+            yield test_client
     app.dependency_overrides.clear()

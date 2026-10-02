@@ -23,6 +23,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://riverwise:riverwise@localhost:5432/riverwise_test
+      RIVERWISE_TEST_DATABASE_URL: postgresql+psycopg://riverwise:riverwise@localhost:5432/riverwise_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,12 +34,12 @@ jobs:
       - run: pip install -r apps/api/requirements.txt
       - name: Lint API and ingestion
         run: ruff check apps/api jobs/ingest scripts
-      - name: Test API
-        working-directory: apps/api
-        run: pytest -q
       - name: Migrate clean PostgreSQL database
         working-directory: apps/api
         run: alembic upgrade head
+      - name: Test API and PostgreSQL integration
+        working-directory: apps/api
+        run: pytest -q
 
   web:
     runs-on: ubuntu-latest

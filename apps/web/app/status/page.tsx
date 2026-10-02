@@ -74,6 +74,14 @@ export default function StatusPage() {
       {loading && !data && <div className="loading-card" role="status"><span className="spinner" />Loading ingestion records…</div>}
       {data && reliability && (
         <>
+          {data.alerts.length > 0 && (
+            <section className="runs-section" aria-labelledby="attention-heading">
+              <div className="status-section-heading"><h2 id="attention-heading">Needs attention</h2><span>{data.alerts.length} current condition{data.alerts.length === 1 ? "" : "s"}</span></div>
+              <ul>
+                {data.alerts.map((alert) => <li key={alert.key}>{alert.message}</li>)}
+              </ul>
+            </section>
+          )}
           <ReliabilitySummary reliability={reliability} days={days} onDaysChange={setDays} />
 
           <section className="freshness-section" aria-labelledby="freshness-heading">
@@ -132,17 +140,18 @@ export default function StatusPage() {
             ) : (
               <div className="runs-table-wrap">
                 <table className="runs-table">
-                  <thead><tr><th>Provider</th><th>Station</th><th>Status</th><th>Last attempt</th><th>Last success</th><th>Rows</th><th>Duration</th></tr></thead>
+                  <thead><tr><th>Provider</th><th>Station</th><th>Status</th><th>Last attempt</th><th>Last success</th><th>Rows</th><th>Duration</th><th>Diagnosis</th></tr></thead>
                   <tbody>
                     {data.sources.map((run) => (
                       <tr key={`${run.source}-${run.station_id ?? "all"}`}>
                         <td>{sentenceCase(run.source)}</td>
                         <td>{run.station_id ?? "All"}</td>
-                        <td><StatusPill status={run.status} /></td>
+                        <td><StatusPill status={run.status} /> <small>#{run.run_id}</small></td>
                         <td>{formatAtlantic(run.last_attempt_at_utc)}</td>
                         <td>{run.last_success_at_utc ? formatAtlantic(run.last_success_at_utc) : "None recorded"}</td>
                         <td>{run.inserted_count} new / {run.updated_count} refreshed / {run.revision_count} changed</td>
                         <td>{run.duration_ms === null ? "—" : `${run.duration_ms} ms`}</td>
+                        <td>{run.error_kind ? sentenceCase(run.error_kind) : "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -249,16 +258,19 @@ function FreshnessCard({
   reliability?: StationReliability;
   days: 7 | 30;
 }) {
-  const status = station.age_minutes === null ? "unavailable" : station.age_minutes <= 180 ? "current" : "stale";
+  const status = station.data_state;
   return (
     <article className="freshness-card">
       <div><span className="station-id">WSC {station.id}</span><StatusPill status={status} /></div>
       <h3>{formatStationName(station.name)}</h3>
       <p>{station.latest_observed_at_utc ? `Latest discharge: ${formatAtlantic(station.latest_observed_at_utc)}` : "No discharge observation stored"}</p>
       <small>{station.age_minutes === null ? "Age unavailable" : `${station.age_minutes} minutes old`}</small>
+      {status !== "current" && <small>{dataStateDescription(status)}</small>}
       {reliability && (
         <dl>
           <div><dt>Discharge rows</dt><dd>{reliability.recent_discharge_observation_count} / {days}d</dd></div>
+          <div><dt>Observed cadence</dt><dd>{reliability.observed_discharge_cadence_minutes === null ? "Insufficient readings" : `${Math.round(reliability.observed_discharge_cadence_minutes)} min`}</dd></div>
+          <div><dt>Long gaps</dt><dd>{reliability.discharge_gap_count}{reliability.discharge_gap_threshold_minutes === null ? "" : ` (over ${Math.round(reliability.discharge_gap_threshold_minutes)} min)`}</dd></div>
           <div><dt>Water-temperature rows</dt><dd>{reliability.recent_water_temperature_observation_count}</dd></div>
           <div><dt>Temperature snapshot coverage</dt><dd>{reliability.water_temperature_availability_pct === null ? "Collecting" : `${reliability.water_temperature_availability_pct.toFixed(1)}%`}</dd></div>
           <div><dt>Daily history</dt><dd>{reliability.historical_daily_observation_count} rows · {reliability.historical_year_count} years</dd></div>
@@ -267,4 +279,18 @@ function FreshnessCard({
       )}
     </article>
   );
+}
+
+
+function dataStateDescription(state: StationFreshness["data_state"]): string {
+  switch (state) {
+    case "provider_error": return "The latest WSC request failed; the last stored reading is old.";
+    case "invalid_payload": return "The latest WSC response could not be validated.";
+    case "missing_measurement": return "WSC responded, but no usable measurement was present.";
+    case "delayed_publication": return "Import succeeded, but WSC has not published a recent reading.";
+    case "missing": return "No discharge reading has been stored for this station.";
+    case "stale": return "The stored reading is old; check the latest provider run below.";
+    case "future_observation": return "The newest reading is dated in the future; check its source timestamp.";
+    default: return "";
+  }
 }

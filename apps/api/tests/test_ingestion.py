@@ -5,8 +5,14 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.ingestion import parse_wsc_csv, parse_wsc_daily_csv, upsert_hydro
-from app.models import HydroObservation, ScoreSnapshot
+from app.ingestion import (
+    NoUsableObservations,
+    parse_open_meteo,
+    parse_wsc_csv,
+    parse_wsc_daily_csv,
+    upsert_hydro,
+)
+from app.models import HydroObservation, HydroRevision, ScoreSnapshot
 from app.service import persist_score_snapshots
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -87,6 +93,61 @@ def test_parser_rejects_unexpected_station() -> None:
         parse_wsc_csv(content, {"01FB001"})
 
 
+def test_parser_skips_missing_values_and_deduplicates_identical_rows() -> None:
+    header = (
+        "ID,Date,Parameter/Paramètre,Value/Valeur,Qualifier/Qualificatif,"
+        "Approval/Approbation\n"
+    )
+    missing = "01FB001,2026-09-23T15:00:00Z,47,,,Provisional\n"
+    valid = "01FB001,2026-09-23T16:00:00Z,47,8.1,,Provisional\n"
+    assert len(parse_wsc_csv(header + missing + valid + valid, {"01FB001"})) == 1
+    with pytest.raises(NoUsableObservations, match="no usable observations"):
+        parse_wsc_csv(header + missing, {"01FB001"})
+
+
+def test_parser_rejects_conflicting_duplicates_and_implausible_values() -> None:
+    header = (
+        "ID,Date,Parameter/Paramètre,Value/Valeur,Qualifier/Qualificatif,"
+        "Approval/Approbation\n"
+    )
+    valid = "01FB001,2026-09-23T16:00:00Z,47,8.1,,Provisional\n"
+    revised = valid.replace("8.1", "8.2")
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        parse_wsc_csv(header + valid + revised, {"01FB001"})
+    with pytest.raises(ValueError, match="nonnegative"):
+        parse_wsc_csv(header + valid.replace("8.1", "-1"), {"01FB001"})
+    with pytest.raises(ValueError, match="finite"):
+        parse_wsc_csv(header + valid.replace("8.1", "NaN"), {"01FB001"})
+
+
+def test_weather_parser_rejects_bad_ranges_and_duplicate_hours() -> None:
+    now = datetime(2026, 9, 23, 16, 30, tzinfo=UTC)
+    hourly = {
+        "time": ["2026-09-23T16:00"],
+        "temperature_2m": [12.0],
+        "precipitation": [1.0],
+        "cloud_cover": [50],
+        "surface_pressure": [1010.0],
+    }
+    assert len(parse_open_meteo({"hourly": hourly}, "01FB001", now)) == 1
+    with pytest.raises(ValueError, match="cloud_cover"):
+        parse_open_meteo(
+            {"hourly": {**hourly, "cloud_cover": [101]}}, "01FB001", now
+        )
+    with pytest.raises(ValueError, match="duplicate hourly"):
+        parse_open_meteo(
+            {"hourly": {key: values * 2 for key, values in hourly.items()}},
+            "01FB001",
+            now,
+        )
+    with pytest.raises(NoUsableObservations, match="no usable weather"):
+        parse_open_meteo(
+            {"hourly": {key: [None] for key in hourly if key != "time"} | {"time": hourly["time"]}},
+            "01FB001",
+            now,
+        )
+
+
 def test_upsert_is_idempotent_and_applies_revision(session: Session) -> None:
     first = (
         "ID,Date,Parameter/Paramètre,Value/Valeur,Qualifier/Qualificatif,"
@@ -114,6 +175,11 @@ def test_upsert_is_idempotent_and_applies_revision(session: Session) -> None:
     assert unchanged.revisions == 0
     assert changed.updated == 1
     assert changed.revisions == 1
+    revisions = list(session.scalars(select(HydroRevision)).all())
+    assert len(revisions) == 1
+    assert revisions[0].old_fields_json["value"] == 8.1
+    assert revisions[0].new_fields_json["value"] == 8.25
+    assert revisions[0].detected_at_utc == ingested_at.replace(tzinfo=None)
 
 
 def test_score_snapshot_persistence_is_idempotent(session: Session) -> None:

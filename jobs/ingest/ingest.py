@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.database import SessionLocal  # noqa: E402
+from app.alerts import mark_alert_notified, refresh_operational_alerts  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from app.ingestion import (  # noqa: E402
+    NoUsableObservations,
     UpsertResult,
     parse_open_meteo,
     parse_wsc_csv,
@@ -26,7 +29,7 @@ from app.models import HydroObservation, IngestRun  # noqa: E402
 from app.service import persist_score_snapshots  # noqa: E402
 
 def _log(event: str, **fields: object) -> None:
-    failed = event.endswith("_failed")
+    failed = event.endswith("_failed") or event == "operator_alert_opened"
     print(
         json.dumps(
             {"level": "error" if failed else "info", "event": event, **fields},
@@ -38,6 +41,20 @@ def _log(event: str, **fields: object) -> None:
     )
 
 
+def _error_kind(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "provider_timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "provider_http"
+    if isinstance(exc, httpx.RequestError):
+        return "provider_network"
+    if isinstance(exc, NoUsableObservations):
+        return "missing_measurement"
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return "invalid_payload"
+    return "internal_error"
+
+
 def _record_run(
     session,
     source: str,
@@ -47,25 +64,27 @@ def _record_run(
     fetched: int,
     stats: UpsertResult,
     error: str | None = None,
-) -> None:
+    error_kind: str | None = None,
+) -> int:
     ended = datetime.now(UTC)
-    session.add(
-        IngestRun(
-            started_at_utc=started,
-            ended_at_utc=ended,
-            source=source,
-            station_id=station_id,
-            status=status,
-            fetched_count=fetched,
-            upserted_count=stats.processed,
-            inserted_count=stats.inserted,
-            updated_count=stats.updated,
-            revision_count=stats.revisions,
-            duration_ms=int((ended - started).total_seconds() * 1000),
-            error=error[:500] if error else None,
-        )
+    run = IngestRun(
+        started_at_utc=started,
+        ended_at_utc=ended,
+        source=source,
+        station_id=station_id,
+        status=status,
+        fetched_count=fetched,
+        upserted_count=stats.processed,
+        inserted_count=stats.inserted,
+        updated_count=stats.updated,
+        revision_count=stats.revisions,
+        duration_ms=int((ended - started).total_seconds() * 1000),
+        error_kind=error_kind,
+        error=error[:500] if error else None,
     )
+    session.add(run)
     session.commit()
+    return run.id
 
 
 def _load_seed(session) -> list[dict]:
@@ -97,7 +116,7 @@ def ingest_fixture(session, evaluation_time: datetime) -> None:
     stats = upsert_hydro(session, hydro_rows, started) + upsert_weather(
         session, weather, started
     )
-    _record_run(
+    run_id = _record_run(
         session,
         "offline_fixtures",
         station["id"],
@@ -111,6 +130,7 @@ def ingest_fixture(session, evaluation_time: datetime) -> None:
     )
     _log(
         "ingest_complete",
+        run_id=run_id,
         source="offline_fixtures",
         fetched=len(hydro_rows) + len(weather),
         upserted=stats.processed,
@@ -138,6 +158,56 @@ def ingest_live(session, evaluation_time: datetime) -> None:
         session, [station["id"] for station in stations], evaluation_time
     )
     _log("score_snapshots_complete", written=snapshot_count)
+    _process_operational_alerts(session, evaluation_time)
+
+
+def _process_operational_alerts(session, evaluation_time: datetime) -> None:
+    changes = refresh_operational_alerts(session, evaluation_time)
+    webhook_url = get_settings().operator_alert_webhook_url
+    for change in changes:
+        alert = change.alert
+        if change.opened:
+            _log(
+                "operator_alert_opened",
+                alert_key=alert.key,
+                code=alert.code,
+                source=alert.source,
+                station_id=alert.station_id,
+                message=alert.message,
+            )
+        if change.resolved:
+            _log("operator_alert_resolved", alert_key=alert.key, code=alert.code)
+        if not webhook_url or not change.notify_due:
+            continue
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.post(
+                    webhook_url,
+                    json={
+                        "event": (
+                            "riverwise.operator_alert.resolved"
+                            if change.resolved
+                            else "riverwise.operator_alert"
+                        ),
+                        "key": alert.key,
+                        "code": alert.code,
+                        "source": alert.source,
+                        "station_id": alert.station_id,
+                        "message": alert.message,
+                        "first_seen_at_utc": alert.first_seen_at_utc.isoformat(),
+                    },
+                )
+                response.raise_for_status()
+            if not change.resolved:
+                mark_alert_notified(session, alert.key, evaluation_time)
+            _log("operator_alert_delivered", alert_key=alert.key, code=alert.code)
+        except Exception as exc:
+            _log(
+                "operator_alert_delivery_failed",
+                alert_key=alert.key,
+                code=alert.code,
+                error_type=type(exc).__name__,
+            )
 
 
 def _ingest_wsc_station(
@@ -162,9 +232,10 @@ def _ingest_wsc_station(
         response.raise_for_status()
         rows = parse_wsc_csv(response.text, {station_id})
         stats = upsert_hydro(session, rows, started)
-        _record_run(session, "wsc", station_id, started, "success", len(rows), stats)
+        run_id = _record_run(session, "wsc", station_id, started, "success", len(rows), stats)
         _log(
             "source_complete",
+            run_id=run_id,
             source="wsc",
             station_id=station_id,
             fetched=len(rows),
@@ -175,10 +246,14 @@ def _ingest_wsc_station(
         )
     except Exception as exc:
         session.rollback()
-        _record_run(
-            session, "wsc", station_id, started, "failed", 0, UpsertResult(), str(exc)
+        error_kind = _error_kind(exc)
+        run_id = _record_run(
+            session, "wsc", station_id, started, "failed", 0, UpsertResult(), str(exc), error_kind
         )
-        _log("source_failed", source="wsc", station_id=station_id, error=str(exc))
+        _log(
+            "source_failed", run_id=run_id, source="wsc", station_id=station_id,
+            error_kind=error_kind, error=str(exc),
+        )
 
 
 def _ingest_wsc_daily_station(
@@ -230,7 +305,7 @@ def _ingest_wsc_daily_station(
         response.raise_for_status()
         rows = parse_wsc_daily_csv(response.text, {station_id})
         stats = upsert_hydro(session, rows, started)
-        _record_run(
+        run_id = _record_run(
             session,
             "wsc_daily",
             station_id,
@@ -241,6 +316,7 @@ def _ingest_wsc_daily_station(
         )
         _log(
             "source_complete",
+            run_id=run_id,
             source="wsc_daily",
             station_id=station_id,
             fetched=len(rows),
@@ -251,7 +327,8 @@ def _ingest_wsc_daily_station(
         )
     except Exception as exc:
         session.rollback()
-        _record_run(
+        error_kind = _error_kind(exc)
+        run_id = _record_run(
             session,
             "wsc_daily",
             station_id,
@@ -260,11 +337,14 @@ def _ingest_wsc_daily_station(
             0,
             UpsertResult(),
             str(exc),
+            error_kind,
         )
         _log(
             "source_failed",
+            run_id=run_id,
             source="wsc_daily",
             station_id=station_id,
+            error_kind=error_kind,
             error=str(exc),
         )
 
@@ -289,7 +369,7 @@ def _ingest_weather_station(
         response.raise_for_status()
         rows = parse_open_meteo(response.json(), station_id, evaluation_time)
         stats = upsert_weather(session, rows, started)
-        _record_run(
+        run_id = _record_run(
             session,
             "open_meteo",
             station_id,
@@ -300,6 +380,7 @@ def _ingest_weather_station(
         )
         _log(
             "source_complete",
+            run_id=run_id,
             source="open_meteo",
             station_id=station_id,
             fetched=len(rows),
@@ -310,7 +391,8 @@ def _ingest_weather_station(
         )
     except Exception as exc:
         session.rollback()
-        _record_run(
+        error_kind = _error_kind(exc)
+        run_id = _record_run(
             session,
             "open_meteo",
             station_id,
@@ -319,11 +401,14 @@ def _ingest_weather_station(
             0,
             UpsertResult(),
             str(exc),
+            error_kind,
         )
         _log(
             "source_failed",
+            run_id=run_id,
             source="open_meteo",
             station_id=station_id,
+            error_kind=error_kind,
             error=str(exc),
         )
 
