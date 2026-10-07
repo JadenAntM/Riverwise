@@ -54,6 +54,8 @@ Implemented:
 
 Phase 2 data-quality work was deployed on 2026-10-02: [ADR 0007](docs/decisions/0007-data-quality-and-operator-alerts.md) describes source-content validation, prospective WSC revision details, station gap and failure diagnoses, stable run IDs, and deduplicated operator-alert detection. External API and ingestion-health monitors are active, and the owner received a test email. A post-deployment observation window and a real degradation-notification test are still needed before calling operator alerting reliable.
 
+Phase 3 station-discovery work is implemented locally: station-name/ID search, region filtering, sorting by experimental score/score-input completeness/observation freshness/name, written map statuses with numbered keyboard markers, discharge qualifiers and approval in a data table, separate modeled precipitation history, station-specific share metadata, and a bounded future-weather preview. [ADR 0008](docs/decisions/0008-station-discovery-and-weather-preview.md) explains the preview's missing-hour and retrieval-time semantics and flags the existing precipitation score-window discrepancy. This is not a production rollout claim; physical-phone verification remains open while Phase 2 continues observation.
+
 ## Architecture
 
 ```text
@@ -148,6 +150,7 @@ To check local configuration, fixture parsing, database connectivity, and statio
 - `GET /api/v1/stations/{id}`
 - `GET /api/v1/stations/{id}/score-history?days=7` (`days` must be `7` or `30`)
 - `GET /api/v1/stations/{id}/history?hours=48` (`1–168`; invalid values return FastAPI’s documented `422` validation response)
+- `GET /api/v1/stations/{id}/weather?history_hours=48&forecast_hours=24` (stored history `1–168` hours, separate future-only preview `1–24` hours; no provider calls). `retrieved_at_utc` is row ingestion time; provider issue time is unavailable. Precipitation is the preceding-hour sum in mm. Missing hours/fields remain explicit; missing provider hours are not filled. Forecast values never enter a current score.
 
 Known stations without usable data return `200` with explicit null/status fields. Unknown stations return `404`.
 
@@ -191,6 +194,8 @@ For a read-only comparison against a separate local PostgreSQL restore, set `DAT
 See the architecture decisions in [`docs/decisions`](docs/decisions) and the full [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
 
 ## Deployment
+
+Phase 3 release preparation is tracked in [the release checklist](docs/deployment/phase3-release.md). The isolated candidate excludes the Trip Planner and ingestion/storage changes. Physical-phone, degradation-email, and pre-release backup/restore evidence remain pending.
 
 Riverwise is deployed on Railway as four services:
 

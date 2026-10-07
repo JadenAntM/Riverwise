@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import stationSeeds from "../../data/stations.json";
 
 const observedAt = "2026-09-24T14:40:00Z";
 const generatedAt = "2026-09-24T15:06:12Z";
@@ -53,6 +54,8 @@ const stations = [
       approval: "Provisional/Provisoire",
     },
     score: availableScore,
+    flow_state: "current",
+    flow_age_minutes: 26,
   },
   {
     id: "01EF001",
@@ -69,6 +72,8 @@ const stations = [
       approval: "Provisional/Provisoire",
     },
     score: { ...availableScore, value: 5 },
+    flow_state: "current",
+    flow_age_minutes: 31,
   },
 ];
 
@@ -136,6 +141,10 @@ type MockOptions = {
   mixedFreshness?: boolean;
   legacyComparison?: boolean;
   activeAlert?: boolean;
+  discoveryStates?: boolean;
+  emptyWeather?: boolean;
+  staleWeather?: boolean;
+  failWeather?: boolean;
 };
 
 async function mockApi(page: Page, options: MockOptions = {}) {
@@ -149,7 +158,13 @@ async function mockApi(page: Page, options: MockOptions = {}) {
     }
 
     if (pathname === "/api/v1/stations") {
-      await route.fulfill({ json: stations });
+      const discoveryStations = [
+        stations[0],
+        { ...stations[1], score: { ...availableScore, value: 9.5, confidence: "partial", available_points: 8, reasons: ["Precipitation is missing."] } },
+        { ...stationSeeds[2], latest_flow: null, flow_state: "missing", flow_age_minutes: null, score: { ...availableScore, value: null, status: "insufficient_data", confidence: "unavailable", available_points: 0 } },
+        { ...stationSeeds[3], latest_flow: { ...stations[0].latest_flow, observed_at_utc: "2026-09-23T14:40:00Z" }, flow_state: "stale", flow_age_minutes: 1466, score: { ...availableScore, value: null, status: "stale", confidence: "unavailable" } },
+      ];
+      await route.fulfill({ json: options.discoveryStates ? discoveryStations : stations });
       return;
     }
 
@@ -169,6 +184,26 @@ async function mockApi(page: Page, options: MockOptions = {}) {
       await route.fulfill({
         json: { station_id: "01FB001", hours: 48, observations },
       });
+      return;
+    }
+
+    if (/\/api\/v1\/stations\/[^/]+\/weather$/.test(pathname)) {
+      if (options.failWeather) { await route.fulfill({ status: 503, json: { detail: "Unavailable" } }); return; }
+      const sample = { kind: "historical_or_modelled", air_temp_c: 16.2, precip_mm: 0.4, cloud_cover_pct: 68, pressure_hpa: 1009.4, retrieved_at_utc: generatedAt, provider_issued_at_utc: null, retrieval_state: "current" };
+      await route.fulfill({ json: {
+        station_id: "01FB001", generated_at_utc: generatedAt, history_hours: 48, forecast_hours: 24,
+        history_start_at_utc: "2026-09-22T15:00:00Z", history_end_at_utc: "2026-09-24T15:00:00Z", forecast_end_at_utc: "2026-09-25T15:00:00Z",
+        source: "Open-Meteo at gauge coordinates", source_url: "https://open-meteo.com/", precipitation_semantics: "Sum in mm over the hour preceding valid_at_utc.", retrieval_stale_after_minutes: 180,
+        history: options.emptyWeather ? [] : [
+          { ...sample, valid_at_utc: "2026-09-24T13:00:00Z", precip_mm: null },
+          { ...sample, valid_at_utc: "2026-09-24T14:00:00Z", precip_mm: 0 },
+          { ...sample, valid_at_utc: "2026-09-24T15:00:00Z" },
+        ],
+        forecast: options.emptyWeather ? [] : [
+          { ...sample, kind: "forecast", valid_at_utc: "2026-09-24T16:00:00Z", precip_mm: 2, retrieval_state: options.staleWeather ? "stale" : "current", retrieved_at_utc: options.staleWeather ? "2026-09-24T10:00:00Z" : generatedAt },
+          { ...sample, kind: "forecast", valid_at_utc: "2026-09-24T18:00:00Z", precip_mm: null },
+        ],
+      } });
       return;
     }
 
@@ -434,4 +469,122 @@ test("shows a not-found error for an unknown station", async ({ page }) => {
   const alert = page.locator(".error-card[role='alert']");
   await expect(alert).toContainText("Station unavailable");
   await expect(alert).toContainText("That station was not found.");
+});
+
+test("searches by river and ID, combines region filters, and clears an empty result", async ({ page }) => {
+  await mockApi(page, { discoveryStates: true });
+  await page.goto("/");
+  await expect(page.locator(".station-card")).toHaveCount(4);
+  await page.getByLabel("Search stations").fill("margaree");
+  await expect(page.locator(".station-card")).toHaveCount(1);
+  await expect(page.getByRole("list", { name: "Map station links" }).getByRole("link")).toHaveCount(1);
+  await page.getByLabel("Region", { exact: true }).selectOption("South Shore");
+  await expect(page.getByText("No stations match these filters.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await page.getByLabel("Search stations").fill("01ef001");
+  await expect(page.locator(".station-card")).toHaveCount(1);
+  await expect(page.locator(".station-card")).toContainText("Lahave River");
+});
+
+test("keeps partial scores below complete scores and sorts measured freshness independently", async ({ page }) => {
+  await mockApi(page, { discoveryStates: true });
+  await page.goto("/");
+  await expect(page.locator(".station-card").first()).toContainText("01FB001");
+  await expect(page.locator(".station-card").nth(1)).toContainText("9.5");
+  await expect(page.locator(".station-card").nth(1)).toContainText("Partial score · 8/10 points available");
+  await page.getByLabel("Sort stations").selectOption("freshness");
+  await expect(page.locator(".station-card").nth(2)).toContainText("01EO001");
+  await expect(page.locator(".station-card").nth(3)).toContainText("Measured flow: missing");
+  await page.getByLabel("Sort stations").selectOption("completeness");
+  await expect(page.locator(".station-card").first()).toContainText("01FB001");
+});
+
+test("opens map markers with the keyboard and exposes all status meanings as text", async ({ page }) => {
+  await mockApi(page, { discoveryStates: true });
+  await page.goto("/");
+  const marker = page.locator(".station-marker").first();
+  await expect(marker).toHaveAttribute("aria-label", /Northeast Margaree.*Complete score/);
+  await marker.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".leaflet-popup")).toContainText("Complete score");
+  await expect(page.locator(".leaflet-popup").getByRole("link", { name: "Open station details" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".leaflet-popup")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Map status legend" })).toContainText("Stale measured flow");
+  await expect(page.getByRole("list", { name: "Map station links" })).toContainText("Measured flow missing");
+});
+
+test("keeps weather history separate from future forecasts and exposes null and zero", async ({ page }) => {
+  await mockApi(page, { staleWeather: true });
+  await page.goto("/stations/01FB001");
+  await expect(page.getByRole("heading", { name: "Previous 48 hours of precipitation" })).toBeVisible();
+  await expect(page.getByText("2/48 hourly precipitation values available.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Next 24 hours near the gauge" })).toBeVisible();
+  await expect(page.getByText("1 hour uses a stale retrieval", { exact: false })).toBeVisible();
+  await expect(page.getByText("Forecast weather does not enter the current experimental conditions score.", { exact: false })).toBeVisible();
+  await page.getByText("View hourly weather history and missing values", { exact: true }).click();
+  const history = page.getByRole("region", { name: "Weather history table" });
+  await expect(history.getByRole("row").filter({ hasText: "Sep 24, 11:00" })).toContainText("0.0");
+  await expect(history.getByRole("row").filter({ hasText: "Sep 24, 10:00" })).toContainText("Unavailable");
+  await expect(page.getByRole("list", { name: "Next six forecast hours" })).toContainText("Forecast hour missing");
+  await page.getByText("View discharge readings, qualifiers, and approval").click();
+  await expect(page.getByRole("region", { name: "Discharge readings table" })).toContainText("Provisional/Provisoire");
+});
+
+test("keeps measured conditions usable with missing or failed weather", async ({ page }) => {
+  await mockApi(page, { emptyWeather: true });
+  await page.goto("/stations/01FB001");
+  await expect(page.getByText("No future forecast is stored.", { exact: false })).toBeVisible();
+  await expect(page.getByText("No nearby precipitation history is available.")).toBeVisible();
+  await expect(page.getByLabel("Latest station conditions")).toContainText("7.42");
+  await page.unroute("**/api/v1/**");
+  await mockApi(page, { failWeather: true });
+  await page.reload();
+  await expect(page.getByText("Weather history and forecast preview are unavailable.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Latest station conditions")).toContainText("7.42");
+});
+
+test("shares station-specific metadata and provides a copy fallback", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/stations/01FB001");
+  await expect(page).toHaveTitle("Northeast Margaree River at Margaree Valley — Riverwise");
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", /WSC 01FB001 in Cape Breton/);
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("Clipboard unavailable")) }, configurable: true }); });
+  await page.getByRole("button", { name: "Copy station link" }).click();
+  await expect(page.getByLabel("Station page link")).toHaveValue("http://127.0.0.1:3100/stations/01FB001");
+});
+
+test("supports discovery and station interpretation at a phone viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockApi(page);
+  await page.goto("/");
+  await page.getByLabel("Search stations").focus();
+  await page.keyboard.type("01FB001");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Region", { exact: true })).toBeFocused();
+  await page.locator(".station-card").click();
+  await expect(page.getByRole("heading", { name: "Next 24 hours near the gauge" })).toBeVisible();
+  await expect(page.getByText("Measured discharge:", { exact: false }).first()).toContainText("Current");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  await page.screenshot({ path: "test-results/phase3-phone.png", fullPage: true });
+  await page.getByRole("heading", { name: "Next 24 hours near the gauge" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/phase3-phone-forecast.png" });
+});
+
+test("distinguishes repeated Atlantic hours when daylight saving time ends", async ({ page }) => {
+  await mockApi(page);
+  await page.route("**/api/v1/stations/*/weather", (route) => route.fulfill({ json: {
+    station_id: "01FB001", generated_at_utc: "2026-11-01T03:30:00Z", history_hours: 48, forecast_hours: 24,
+    history_start_at_utc: "2026-10-30T03:00:00Z", history_end_at_utc: "2026-11-01T03:00:00Z", forecast_end_at_utc: "2026-11-02T03:00:00Z",
+    source: "Open-Meteo at gauge coordinates", source_url: "https://open-meteo.com/", precipitation_semantics: "Sum in mm over the hour preceding valid_at_utc.", retrieval_stale_after_minutes: 180,
+    history: [], forecast: ["2026-11-01T04:00:00Z", "2026-11-01T05:00:00Z"].map((valid_at_utc) => ({
+      valid_at_utc, kind: "forecast", air_temp_c: 14, precip_mm: 0, cloud_cover_pct: 50, pressure_hpa: null,
+      retrieved_at_utc: "2026-11-01T03:30:00Z", provider_issued_at_utc: null, retrieval_state: "current",
+    })),
+  } }));
+  await page.goto("/stations/01FB001");
+  const times = page.getByRole("list", { name: "Next six forecast hours" }).locator("time");
+  await expect(times.nth(0)).toContainText("1:00 a.m. ADT");
+  await expect(times.nth(1)).toContainText("1:00 a.m. AST");
 });

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .alerts import operational_findings
 from .config import get_settings
 from .database import get_db
-from .models import Station
+from .models import HydroObservation, Station, WeatherHour
 from .schemas import (
     HealthResponse,
     HistoryResponse,
@@ -23,7 +23,9 @@ from .schemas import (
     ScoreSnapshotOut,
     StationDetail,
     StationSummary,
+    StationWeatherResponse,
     WeatherOut,
+    WeatherSampleOut,
 )
 from .scoring import (
     CANDIDATE_RULES_VERSION,
@@ -102,8 +104,20 @@ def _station_summary(session: Session, station: Station, now: datetime) -> Stati
         province=station.province,
         source_url=station.source_url,
         latest_flow=ObservationOut.model_validate(latest) if latest else None,
+        **_flow_freshness(latest, now),
         score=_score_out(result),
     )
+
+
+def _flow_freshness(latest: HydroObservation | None, now: datetime) -> dict:
+    if latest is None:
+        return {"flow_age_minutes": None, "flow_state": "missing"}
+    observed = ObservationOut.model_validate(latest).observed_at_utc
+    age = now - observed
+    return {
+        "flow_age_minutes": max(0, int(age.total_seconds() / 60)),
+        "flow_state": "current" if age <= timedelta(hours=3) else "stale",
+    }
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -250,6 +264,7 @@ def station_detail(station_id: str, session: Session = Depends(get_db)) -> Stati
         province=station.province,
         source_url=station.source_url,
         latest_flow=ObservationOut.model_validate(latest) if latest else None,
+        **_flow_freshness(latest, now),
         score=_score_out(result),
         candidate_score=_score_out(candidate, CANDIDATE_RULES_VERSION),
         baseline_median_m3s=context.get("baseline_median"),
@@ -281,6 +296,67 @@ def station_history(
         station_id=station_id,
         hours=hours,
         observations=[ObservationOut.model_validate(item) for item in observations],
+    )
+
+
+@app.get(
+    "/api/v1/stations/{station_id}/weather",
+    response_model=StationWeatherResponse,
+    summary="Nearby modeled weather history and a separate bounded forecast preview",
+    description=(
+        "Reads stored Open-Meteo hours only. History is classified historical_or_modelled; "
+        "it is not a weather-station measurement. Forecast contains only future valid hours. "
+        "Missing rows and null fields are not filled. Retrieved time is ingestion time; "
+        "provider issue time is unavailable. Retrieval is stale after three hours. "
+        "Precipitation is the sum over the preceding hour, in mm. No forecast enters a score."
+    ),
+)
+def station_weather(
+    station_id: str,
+    history_hours: int = Query(default=48, ge=1, le=168),
+    forecast_hours: int = Query(default=24, ge=1, le=24),
+    session: Session = Depends(get_db),
+) -> StationWeatherResponse:
+    if not session.get(Station, station_id):
+        raise HTTPException(status_code=404, detail="Station not found")
+    now = datetime.now(UTC)
+    hour = now.replace(minute=0, second=0, microsecond=0)
+    start = hour - timedelta(hours=history_hours)
+    end = hour + timedelta(hours=forecast_hours)
+    rows = session.scalars(
+        select(WeatherHour)
+        .where(
+            WeatherHour.station_id == station_id,
+            WeatherHour.valid_at_utc > start,
+            WeatherHour.valid_at_utc <= end,
+            WeatherHour.ingested_at_utc <= now,
+        )
+        .order_by(WeatherHour.valid_at_utc)
+    ).all()
+    history, forecast = [], []
+    for row in rows:
+        weather = WeatherOut.model_validate(row)
+        retrieved = row.ingested_at_utc
+        retrieved = retrieved.replace(tzinfo=UTC) if retrieved.tzinfo is None else retrieved
+        sample = WeatherSampleOut(
+            **weather.model_dump(),
+            retrieved_at_utc=retrieved,
+            retrieval_state="stale" if now - retrieved > timedelta(hours=3) else "current",
+        )
+        if sample.kind == "historical_or_modelled" and sample.valid_at_utc <= hour:
+            history.append(sample)
+        elif sample.kind == "forecast" and sample.valid_at_utc > now:
+            forecast.append(sample)
+    return StationWeatherResponse(
+        station_id=station_id,
+        generated_at_utc=now,
+        history_hours=history_hours,
+        forecast_hours=forecast_hours,
+        history_start_at_utc=start,
+        history_end_at_utc=hour,
+        forecast_end_at_utc=end,
+        history=history,
+        forecast=forecast,
     )
 
 

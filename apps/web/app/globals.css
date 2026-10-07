@@ -311,3 +311,58 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Station discovery and data equivalents are usable without map, hover, or color. */
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 3px solid #eba15d; outline-offset: 3px; }
+.station-controls { display: grid; grid-template-columns: 2fr 1fr 1.4fr; gap: 18px; padding: 22px; border: 1px solid var(--line); background: #eef3ed; }
+.station-controls > div, .station-share label { display: flex; flex-direction: column; gap: 8px; font-size: .8rem; font-weight: 700; min-width: 0; }
+.station-controls input, .station-controls select, .station-share input { min-width: 0; width: 100%; min-height: 44px; border: 1px solid #8d9f91; border-radius: 2px; padding: 10px; background: white; color: var(--ink); }
+.discovery-summary { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.discovery-summary p, .discovery-note { font-size: .82rem; color: #44564d; line-height: 1.6; }
+.discovery-note { margin: 12px 0 20px; }
+.text-button { border: 0; color: var(--forest); background: transparent; text-decoration: underline; font-weight: 700; min-height: 44px; }
+.station-region { color: var(--forest); font-size: .76rem; margin: 10px 0 0; }
+.station-card h3 { margin: 20px 0; }
+.card-data-state, .card-coverage, .card-reason { font-size: .78rem; line-height: 1.5; color: #44564d; }
+.card-coverage { font-weight: 700; }
+.card-reason { margin: 8px 0; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 10px 24px; list-style: none; padding: 0; font-size: .78rem; }
+.map-legend li { display: flex; gap: 8px; }
+.map-key p { margin: 6px 0 0; color: #44564d; }
+.map-dot.complete, .station-marker.complete { background: #1f6b4f; }
+.map-dot.partial, .station-marker.partial { background: #936019; }
+.map-dot.stale, .station-marker.stale { background: #a34132; }
+.map-dot.unavailable, .station-marker.unavailable { background: #555d9a; }
+.map-dot.missing, .station-marker.missing { background: #68736b; }
+.station-marker { display: grid; place-items: center; border: 2px solid white; border-radius: 50%; color: white; box-shadow: 0 1px 5px #18332966; font-weight: 800; }
+.station-marker:focus-visible { outline: 3px solid #183329; outline-offset: 3px; }
+.station-share { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: -15px 0 24px; font-size: .8rem; }
+.station-share span { color: var(--forest); }
+.station-share label { flex-basis: 100%; }
+.observation-status { padding: 16px 18px; border: 1px solid var(--line); background: #eef3ed; font-size: .85rem; line-height: 1.6; }
+.chart-summary { color: #44564d; font-size: .85rem; line-height: 1.6; }
+.chart-note { line-height: 1.6; }
+.data-details { margin-top: 20px; }
+.data-details summary { cursor: pointer; min-height: 44px; padding: 12px 0; color: var(--forest); font-size: .82rem; font-weight: 700; }
+.data-table-scroll { max-height: 440px; overflow: auto; border: 1px solid var(--line); }
+.data-table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+.data-table caption { text-align: left; padding: 12px; background: #eef3ed; line-height: 1.5; }
+.data-table th, .data-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line); min-width: 110px; }
+.data-table thead th { color: #44564d; background: #f5f8f4; }
+.data-table tbody th { font-weight: 500; min-width: 150px; }
+.forecast-preview { border-top: 4px solid #936019; background: #fcf9f2; }
+.forecast-boundary { font-size: .88rem; line-height: 1.6; padding: 14px; background: #f4e9d3; color: #65462d; }
+.forecast-hours { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.forecast-hours li { padding: 16px; border: 1px solid var(--line); background: white; display: flex; flex-direction: column; gap: 8px; }
+.forecast-hours time { color: #44564d; font-size: .78rem; font-weight: 650; }
+.forecast-hours strong { font: 500 1.65rem Georgia, serif; }
+.forecast-hours span { color: #44564d; font-size: .76rem; line-height: 1.5; }
+@media (max-width: 780px) {
+  .station-controls { grid-template-columns: 1fr; }
+  .forecast-hours { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 360px) {
+  .station-grid, .forecast-hours { grid-template-columns: minmax(0, 1fr); }
+}

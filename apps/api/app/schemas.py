@@ -62,6 +62,8 @@ class StationSummary(BaseModel):
     province: str
     source_url: str
     latest_flow: ObservationOut | None
+    flow_age_minutes: int | None
+    flow_state: Literal["current", "stale", "missing"]
     score: ScoreOut
 
 
@@ -109,6 +111,52 @@ class HistoryResponse(BaseModel):
     station_id: str
     hours: int = Field(ge=1, le=168)
     observations: list[ObservationOut]
+
+
+class WeatherSampleOut(WeatherOut):
+    kind: Literal["historical_or_modelled", "forecast"]
+    retrieved_at_utc: datetime
+    provider_issued_at_utc: datetime | None = None
+    retrieval_state: Literal["current", "stale"]
+
+    @field_validator("retrieved_at_utc")
+    @classmethod
+    def mark_retrieved_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class StationWeatherResponse(BaseModel):
+    station_id: str
+    generated_at_utc: datetime
+    history_hours: int = Field(ge=1, le=168)
+    forecast_hours: int = Field(ge=1, le=24)
+    history_start_at_utc: datetime
+    history_end_at_utc: datetime
+    forecast_end_at_utc: datetime
+    source: str = "Open-Meteo at gauge coordinates"
+    source_url: str = "https://open-meteo.com/"
+    precipitation_semantics: str = "Sum in mm over the hour preceding valid_at_utc."
+    retrieval_stale_after_minutes: int = 180
+    history: list[WeatherSampleOut]
+    forecast: list[WeatherSampleOut]
+
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [{
+            "station_id": "01FC002",
+            "generated_at_utc": "2026-09-23T16:30:00Z",
+            "history_hours": 48,
+            "forecast_hours": 24,
+            "history_start_at_utc": "2026-09-21T16:00:00Z",
+            "history_end_at_utc": "2026-09-23T16:00:00Z",
+            "forecast_end_at_utc": "2026-09-24T16:00:00Z",
+            "source": "Open-Meteo at gauge coordinates",
+            "source_url": "https://open-meteo.com/",
+            "precipitation_semantics": "Sum in mm over the hour preceding valid_at_utc.",
+            "retrieval_stale_after_minutes": 180,
+            "history": [],
+            "forecast": [],
+        }],
+    })
 
 
 class ScoreSnapshotOut(BaseModel):
