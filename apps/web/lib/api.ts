@@ -42,6 +42,8 @@ export type StationSummary = {
   province: string;
   source_url: string;
   latest_flow: Observation | null;
+  flow_age_minutes?: number | null;
+  flow_state?: "current" | "stale" | "missing";
   score: Score;
 };
 
@@ -94,6 +96,28 @@ export type History = {
   station_id: string;
   hours: number;
   observations: Observation[];
+};
+
+export type WeatherSample = Weather & {
+  retrieved_at_utc: string;
+  provider_issued_at_utc: string | null;
+  retrieval_state: "current" | "stale";
+};
+
+export type StationWeather = {
+  station_id: string;
+  generated_at_utc: string;
+  history_hours: number;
+  forecast_hours: number;
+  history_start_at_utc: string;
+  history_end_at_utc: string;
+  forecast_end_at_utc: string;
+  source: string;
+  source_url: string;
+  precipitation_semantics: string;
+  retrieval_stale_after_minutes: number;
+  history: WeatherSample[];
+  forecast: WeatherSample[];
 };
 
 export type ScoreSnapshot = {
@@ -216,6 +240,10 @@ export function getStation(id: string): Promise<StationDetail> {
 
 export function getHistory(id: string): Promise<History> {
   return request(`/api/v1/stations/${encodeURIComponent(id)}/history?hours=48`);
+}
+
+export function getStationWeather(id: string): Promise<StationWeather> {
+  return request(`/api/v1/stations/${encodeURIComponent(id)}/weather`);
 }
 
 export function getScoreHistory(id: string, days: 7 | 30): Promise<ScoreHistory> {

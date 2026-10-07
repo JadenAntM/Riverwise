@@ -61,6 +61,12 @@ At the owner's explicit request, this milestone started while Phase 1's continuo
 
 ## 3. Make stations easier to find and understand — v1.3
 
+At the owner's request on 2026-10-02, Phase 3 development started while the deployed Phase 2 operations changes continue observation. This does not close the outstanding Phase 1/2 evidence gates. The local implementation and interpretation decisions are in [ADR 0008](decisions/0008-station-discovery-and-weather-preview.md). Production deployment and a physical narrow-screen phone check remain pending.
+
+Local verification on 2026-10-02: 108 backend tests passed with the PostgreSQL integration test enabled against a freshly migrated disposable PostgreSQL 17 database (migrations 0001–0006). The other backend contracts use offline SQLite fixtures. All 18 Chromium browser journeys passed with intercepted API fixtures and map tiles blocked, including search/filter/sort, complete-versus-partial ranking, keyboard marker opening and Escape closing, missing/stale weather, share fallback, a 390 × 844 viewport with no page overflow, and repeated Atlantic 1 a.m. hours labeled ADT/AST at the DST transition. These are local checks, not production reliability, a full accessibility audit, or physical-phone evidence.
+
+Frontend lint, TypeScript, production build, Python lint, and Compose configuration checks passed. A separate PostgreSQL fixture-preview database was migrated and loaded with the committed offline fixtures; an actual PostgreSQL → API → built-web browser smoke passed at 390 × 844 with station search, detail navigation, stale measured-data labels, and a missing-forecast state. The fixtures retain their 2026-09-23 timestamps. The existing working local Docker database was found to lack Phase 2 migration 0004's `error_kind` column; it was not changed for this preview. The disposable integration-test database was removed after verification. Preview processes currently use web port 3101 and API port 8001 and database `riverwise_phase3_preview_20261002`; this is a local review setup, not a deployment configuration.
+
 1. Add station search, region filters, and sorting by freshness, completeness, and score with complete/partial states kept distinct. Avoid an unproven “best fishing” ranking.
 2. Improve the station chart with measured discharge and separate nearby weather/rain history; explain units, source, qualifiers, gaps, and why a score is partial or stale.
 3. Improve map status markers, legend, keyboard access, and the equivalent text list. Add useful shareable station metadata and test the flow on a real narrow-screen phone.
@@ -103,8 +109,10 @@ Start with browser-local favourites, a favourites summary, and station ordering,
 
 ## Immediate next actions
 
+The [Phase 3 release checklist](deployment/phase3-release.md) tracks the isolated candidate, CI, physical-phone sign-off, controlled email drill, fresh backup/restore, and rollback. Deployment is on hold until the remaining evidence is recorded.
+
 1. Close the seven-day reliability report at the actual observation point; verify cost, local backup/restore evidence, and any remaining production issues.
-2. Write station/source completeness expectations and an actionable ingestion-failure alert—the minimum quality foundation for the next user-facing release.
-3. Scope v1.3 station discovery and a small forecast preview, then write the Trip Planner ADR before changing forecast storage or UI.
+2. Continue the Phase 2 observation window and verify a real degradation notification from the deployed operator monitor.
+3. Review the isolated v1.3 station-discovery release candidate on a physical phone; preserve the deployment hold until its release checks are complete. Trip Planner development remains in the separate combined working copy. Resolve ADR 0008’s precipitation score-window discrepancy through a separate versioned scoring decision.
 
 The Phase 2 shadow model can continue collecting snapshots throughout this work. Pressure/daylight scoring and a production-score replacement remain research questions, not blockers for a forecast-only planner and not claims of improved accuracy.

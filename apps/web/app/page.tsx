@@ -15,6 +15,7 @@ import {
   type StationSummary,
 } from "@/lib/api";
 import { formatAtlantic, formatStationName } from "@/lib/format";
+import { discoverStations, flowState, scoreCoverage, stationRegion, type StationSort } from "@/lib/stations";
 
 
 const StationMap = dynamic(
@@ -29,6 +30,11 @@ export default function Home() {
   const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [region, setRegion] = useState("all");
+  const [sort, setSort] = useState<StationSort>("score");
+  const visibleStations = discoverStations(stations, query, region, sort);
+  const availableRegions = [...new Set(stations.map((station) => stationRegion(station.id)))].sort();
 
   useEffect(() => {
     getIngestionStatus()
@@ -104,7 +110,7 @@ export default function Home() {
             <p className="section-kicker">Station index</p>
             <h2 id="stations-heading">Available gauges</h2>
           </div>
-          <p className="section-aside">Complete data first, partial data second</p>
+          <p className="discovery-note">Score sorting keeps complete and partial data distinct.</p>
         </div>
 
         {loading && <LoadingCard />}
@@ -112,14 +118,45 @@ export default function Home() {
         {!loading && !error && stations.length === 0 && (
           <div className="empty-state">No configured stations are available yet.</div>
         )}
+        {!loading && !error && stations.length > 0 && (
+          <>
+            <div className="station-controls" role="search" aria-label="Find a gauge">
+              <div className="station-search"><label htmlFor="station-search">Search stations</label>
+                <input id="station-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="River name or WSC ID" />
+              </div>
+              <div><label htmlFor="station-region">Region</label>
+                <select id="station-region" value={region} onChange={(event) => setRegion(event.target.value)}>
+                  <option value="all">All regions</option>
+                  {availableRegions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div><label htmlFor="station-sort">Sort stations</label>
+                <select id="station-sort" value={sort} onChange={(event) => setSort(event.target.value as StationSort)}>
+                  <option value="score">Experimental score</option>
+                  <option value="freshness">Observation freshness</option>
+                  <option value="completeness">Score data completeness</option>
+                  <option value="name">Station name</option>
+                </select>
+              </div>
+            </div>
+            <div className="discovery-summary">
+              <p role="status">{visibleStations.length} of {stations.length} stations shown</p>
+              {(query || region !== "all") && <button className="text-button" onClick={() => { setQuery(""); setRegion("all"); }}>Clear filters</button>}
+            </div>
+            <p className="discovery-note">Regions describe gauge locations. Sorting describes data and the experimental conditions score, not fishing outcomes.</p>
+            {visibleStations.length === 0 && <p className="empty-state">No stations match these filters. Try a river name, station ID, or another region.</p>}
+          </>
+        )}
         <div className="station-grid">
-          {stations.map((station) => (
+          {visibleStations.map((station) => (
             <Link className="station-card" href={`/stations/${station.id}`} key={station.id}>
               <div className="card-topline">
                 <span className="station-id">WSC {station.id}</span>
                 <StatusPill status={station.score.confidence} />
               </div>
+              <p className="station-region">{stationRegion(station.id)}</p>
               <h3>{formatStationName(station.name)}</h3>
+              <p className="card-data-state">Measured flow: {flowState(station)}{station.flow_age_minutes != null ? ` · ${station.flow_age_minutes} minutes old` : ""}</p>
               <div className="card-metrics">
                 <div>
                   <span className="metric-label">Measured flow</span>
@@ -127,11 +164,14 @@ export default function Home() {
                   <span className="metric-unit">{station.latest_flow?.unit ?? "Unavailable"}</span>
                 </div>
                 <div>
-                  <span className="metric-label">Conditions score</span>
+                  <span className="metric-label">Experimental conditions score</span>
                   <strong>{station.score.value?.toFixed(1) ?? "—"}</strong>
                   <span className="metric-unit">{station.score.value === null ? "Unavailable" : "/ 10"}</span>
                 </div>
               </div>
+              <p className="card-coverage">{scoreCoverage(station)}</p>
+              {station.score.confidence !== "complete" && <p className="card-reason">{station.score.reasons[0]}</p>}
+              {station.latest_flow?.qualifier && <p className="card-reason">WSC qualifier: {station.latest_flow.qualifier}</p>}
               <div className="card-footer">
                 <span>
                   {station.latest_flow
@@ -143,7 +183,7 @@ export default function Home() {
             </Link>
           ))}
         </div>
-        {!loading && !error && stations.length > 0 && <StationMap stations={stations} />}
+        {!loading && !error && visibleStations.length > 0 && <StationMap stations={visibleStations} />}
       </section>
 
       <section className="method shell">
@@ -152,7 +192,7 @@ export default function Home() {
         <div className="method-grid">
           <article><span>Gauge</span><div><h3>Discharge is measured at one location</h3><p>It does not describe every pool, tributary, or access point on the river.</p></div></article>
           <article><span>Temperature</span><div><h3>Water temperature is used only when measured</h3><p>Stations without that output keep an explicit data gap; nearby modeled air temperature is never substituted.</p></div></article>
-          <article><span>Score</span><div><h3>The rules are experimental</h3><p>Version 1.0 remains current while the seasonal v1.1 candidate runs transparently in the score lab.</p></div></article>
+          <article><span>Score</span><div><h3>The rules are experimental</h3><p>Version 1.0 remains current while the v1.1 and v1.2 candidates run transparently in the score lab.</p></div></article>
         </div>
       </section>
     </main>
